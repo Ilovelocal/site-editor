@@ -1,0 +1,2095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Site Editor</title>
+<style>
+/* ============================================================
+   Palette: job-site drawing set.
+   paper = drafting stock, blueprint = structure/labels,
+   marking = the orange spray-paint accent used ONLY for actions
+   and current selection. Nothing else gets to be orange.
+   ============================================================ */
+:root{
+  --paper:#E7ECF0; --panel:#FFFFFF; --panel-2:#F4F7F9;
+  --ink:#15222C; --ink-2:#5B6E7C; --ink-3:#8A9BA7;
+  --rule:#C7D4DD; --rule-2:#DDE5EB;
+  --blueprint:#2C6E9E; --blueprint-soft:#E3EDF5;
+  --marking:#DE521C; --marking-soft:#FBE9E1;
+  --good:#1F7A55; --warn:#9A6B00; --bad:#B32218;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --r:3px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font:13px/1.45 var(--ui);
+  -webkit-text-size-adjust:100%;
+  overflow:hidden;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--marking);outline-offset:1px}
+
+/* ---------- shell ---------- */
+#app{display:grid;grid-template-rows:auto 1fr auto;height:100dvh}
+
+/* ---------- top bar ---------- */
+.bar{
+  display:flex;align-items:center;gap:6px;padding:6px 8px;
+  background:var(--panel);border-bottom:1px solid var(--rule);
+  flex-wrap:wrap;
+}
+.brand{display:flex;align-items:baseline;gap:7px;padding-right:8px;margin-right:2px;border-right:1px solid var(--rule-2)}
+.brand b{font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.brand span{font:10px/1 var(--mono);color:var(--ink-3);letter-spacing:.06em}
+.spacer{flex:1 1 auto;min-width:4px}
+
+.btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 9px;border:1px solid var(--rule);border-radius:var(--r);
+  background:var(--panel-2);cursor:pointer;white-space:nowrap;
+  font-size:12px;line-height:1.25;
+}
+.btn:hover:not(:disabled){background:#fff;border-color:var(--blueprint)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.primary{background:var(--marking);border-color:var(--marking);color:#fff;font-weight:600}
+.btn.primary:hover:not(:disabled){background:#c74716;border-color:#c74716}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.ghost:hover:not(:disabled){background:var(--panel-2);border-color:var(--rule)}
+.btn kbd{font:10px/1 var(--mono);color:var(--ink-3);border:1px solid var(--rule);border-radius:2px;padding:2px 3px}
+.btn.primary kbd{color:#fff;border-color:rgba(255,255,255,.5)}
+
+.chip{
+  display:inline-flex;align-items:center;gap:5px;padding:4px 8px;
+  border:1px solid var(--rule);border-radius:100px;background:var(--panel-2);
+  font:10px/1.3 var(--mono);letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2);
+}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+.chip.ok .dot{background:var(--good)} .chip.warn .dot{background:var(--warn)} .chip.bad .dot{background:var(--bad)}
+.chip.ok{color:var(--good);border-color:#B9DCCB} .chip.warn{color:var(--warn);border-color:#E6D3A2} .chip.bad{color:var(--bad);border-color:#E8BDB8}
+
+/* ---------- body ---------- */
+#main{display:grid;grid-template-columns:302px 1fr;min-height:0}
+#side{
+  background:var(--panel);border-right:1px solid var(--rule);
+  display:grid;grid-template-rows:auto 1fr;min-height:0;min-width:0;
+}
+.tabs{display:flex;border-bottom:1px solid var(--rule);background:var(--panel-2);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:1 0 auto;padding:8px 10px;border:0;border-bottom:2px solid transparent;background:transparent;
+  font:10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);cursor:pointer;
+}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--marking);background:var(--panel)}
+.tab .n{color:var(--ink-3)}
+.panes{overflow:auto;min-height:0;overscroll-behavior:contain}
+.pane{display:none;padding:10px}
+.pane.on{display:block}
+
+.lbl{font:10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:2px 0 6px}
+.hr{height:1px;background:var(--rule-2);margin:12px 0}
+.hint{font-size:11.5px;color:var(--ink-2);margin:6px 0}
+.hint code{font:11px/1 var(--mono);background:var(--panel-2);border:1px solid var(--rule-2);border-radius:2px;padding:1px 3px}
+.empty{
+  border:1px dashed var(--rule);border-radius:var(--r);padding:16px 12px;text-align:center;
+  color:var(--ink-2);font-size:12px;background:var(--panel-2);
+}
+.field{display:block;width:100%;padding:5px 7px;border:1px solid var(--rule);border-radius:var(--r);background:var(--panel-2)}
+.field:focus{background:#fff;border-color:var(--blueprint)}
+.row{display:flex;gap:6px;align-items:center}
+.row>.field{flex:1 1 auto;min-width:0}
+
+/* stats */
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule-2);border:1px solid var(--rule-2);border-radius:var(--r);overflow:hidden}
+.stat{background:var(--panel);padding:7px 8px}
+.stat b{display:block;font:15px/1.1 var(--mono);font-weight:600}
+.stat span{font:9px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+
+/* lists */
+.list{display:flex;flex-direction:column;gap:5px}
+.item{
+  display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
+  padding:6px;border:1px solid var(--rule-2);border-radius:var(--r);background:var(--panel);
+}
+.item:hover{border-color:var(--rule);background:var(--panel-2)}
+.item.sel{border-color:var(--marking);background:var(--marking-soft)}
+.item .meta{min-width:0}
+.item .nm{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{font:10px/1.3 var(--mono);color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thumb{
+  width:38px;height:38px;border:1px solid var(--rule);border-radius:2px;background:#fff center/contain no-repeat;
+  background-image:linear-gradient(45deg,#eef2f5 25%,transparent 25%,transparent 75%,#eef2f5 75%),linear-gradient(45deg,#eef2f5 25%,transparent 25%,transparent 75%,#eef2f5 75%);
+  background-size:8px 8px;background-position:0 0,4px 4px;flex:none;
+}
+.thumb.has{background-image:var(--img);background-size:contain;background-position:center;background-repeat:no-repeat}
+.tag{font:9px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 4px;border-radius:2px;background:var(--blueprint-soft);color:var(--blueprint);border:1px solid #CADEEC}
+.tag.edited{background:var(--marking-soft);color:var(--marking);border-color:#F0CDBC}
+.mini{border:1px solid var(--rule);background:var(--panel-2);border-radius:2px;padding:3px 5px;font-size:11px;cursor:pointer;line-height:1}
+.mini:hover{background:#fff;border-color:var(--blueprint)}
+
+/* colors */
+.swatches{display:flex;flex-direction:column;gap:5px}
+.sw{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:5px 6px;border:1px solid var(--rule-2);border-radius:var(--r)}
+.sw:hover{background:var(--panel-2)}
+.sw .chipc{width:30px;height:30px;border-radius:2px;border:1px solid rgba(0,0,0,.18);padding:0;cursor:pointer;background:none;flex:none;overflow:hidden}
+.sw .chipc input{opacity:0;width:100%;height:100%;display:block;cursor:pointer}
+.sw .hex{font:11px/1.3 var(--mono)}
+.sw .cnt{font:10px/1.3 var(--mono);color:var(--ink-3)}
+.pal{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
+.pal i{width:26px;height:26px;border-radius:2px;border:1px solid rgba(0,0,0,.15);display:block}
+
+/* ---------- board (signature) ---------- */
+#board{
+  position:relative;min-width:0;min-height:0;display:grid;grid-template-rows:auto 1fr;
+  background:
+    linear-gradient(var(--rule-2) 1px,transparent 1px) 0 0/100% 24px,
+    linear-gradient(90deg,var(--rule-2) 1px,transparent 1px) 0 0/24px 100%,
+    var(--paper);
+}
+.boardbar{display:flex;align-items:center;gap:8px;padding:5px 8px;background:rgba(255,255,255,.86);border-bottom:1px solid var(--rule);backdrop-filter:blur(3px);flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--panel-2)}
+.seg button{border:0;background:transparent;padding:5px 9px;cursor:pointer;font:10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);border-right:1px solid var(--rule-2)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.findwrap{display:flex;align-items:center;gap:4px;border:1px solid var(--rule);border-radius:var(--r);background:var(--panel-2);padding:0 4px}
+.findwrap input{border:0;background:transparent;padding:5px 2px;width:150px;min-width:60px}
+.findwrap input:focus{outline:none}
+.findwrap .cnt{font:10px/1 var(--mono);color:var(--ink-3);white-space:nowrap}
+
+.stage{position:relative;overflow:auto;padding:0 12px 14px;min-height:0}
+/* the dimension ruler: tick marks + live width readout */
+.ruler{position:sticky;top:0;z-index:3;height:22px;margin:0 auto;pointer-events:none;
+  background:
+    repeating-linear-gradient(90deg,var(--blueprint) 0 1px,transparent 1px 20px) bottom/100% 6px no-repeat,
+    repeating-linear-gradient(90deg,var(--blueprint) 0 1px,transparent 1px 100px) bottom/100% 11px no-repeat;
+  opacity:.55}
+.dim{position:sticky;top:0;z-index:4;display:flex;justify-content:center;pointer-events:none}
+.dim b{font:9px/1 var(--mono);letter-spacing:.1em;color:var(--blueprint);background:var(--paper);padding:0 6px;transform:translateY(6px)}
+.frame{margin:0 auto;background:#fff;border:1px solid var(--rule);box-shadow:0 1px 0 rgba(21,34,44,.06),0 10px 26px -18px rgba(21,34,44,.5);transition:width .16s ease}
+iframe#pv{display:block;width:100%;height:100%;border:0;background:#fff}
+#dropzone{position:absolute;inset:0;display:grid;place-items:center;background:rgba(231,236,240,.94);z-index:6}
+#dropzone .card{max-width:430px;text-align:center;background:var(--panel);border:1px dashed var(--rule);border-radius:var(--r);padding:26px 22px}
+#dropzone h1{margin:0 0 6px;font-size:16px;letter-spacing:-.01em}
+#dropzone p{margin:0 0 14px;color:var(--ink-2);font-size:12.5px}
+#dropzone.drag .card{border-color:var(--marking);background:var(--marking-soft)}
+
+/* ---------- log ---------- */
+#logwrap{background:var(--panel);border-top:1px solid var(--rule)}
+.loghead{display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;user-select:none}
+.loghead .lbl{margin:0}
+#log{height:104px;overflow:auto;padding:0 8px 6px;font:11px/1.5 var(--mono);border-top:1px solid var(--rule-2)}
+#logwrap.collapsed #log{display:none}
+.ln{display:flex;gap:8px;padding:1px 0;border-bottom:1px dotted var(--rule-2)}
+.ln time{color:var(--ink-3);flex:none}
+.ln.info span{color:var(--ink-2)} .ln.ok span{color:var(--good)} .ln.warn span{color:var(--warn)} .ln.err span{color:var(--bad);font-weight:600}
+
+/* ---------- modal ---------- */
+.modal{position:fixed;inset:0;background:rgba(21,34,44,.42);display:none;place-items:center;z-index:50;padding:14px}
+.modal.on{display:grid}
+.sheet{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);width:min(720px,100%);max-height:86dvh;display:flex;flex-direction:column;box-shadow:0 24px 60px -20px rgba(21,34,44,.6)}
+.sheet header{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid var(--rule)}
+.sheet header h2{margin:0;font-size:13px;letter-spacing:.02em}
+.sheet .body{padding:10px;overflow:auto}
+.sheet footer{display:flex;gap:6px;justify-content:flex-end;padding:9px 10px;border-top:1px solid var(--rule);background:var(--panel-2);flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.gimg{border:1px solid var(--rule);border-radius:var(--r);padding:4px;background:var(--panel-2);cursor:pointer;text-align:center}
+.gimg:hover{border-color:var(--marking)}
+.gimg .thumb{width:100%;height:66px}
+.gimg .sub{font:9px/1.3 var(--mono);color:var(--ink-3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.tests{width:100%;border-collapse:collapse;font-size:12px}
+table.tests td{border-bottom:1px solid var(--rule-2);padding:4px 6px;vertical-align:top}
+table.tests td:first-child{width:26px;font-weight:700}
+td.p{color:var(--good)} td.f{color:var(--bad)}
+.note{font-size:11.5px;color:var(--ink-2);background:var(--panel-2);border-left:2px solid var(--blueprint);padding:6px 8px;border-radius:0 var(--r) var(--r) 0}
+
+/* ---------- responsive ---------- */
+#sidetoggle{display:none}
+@media (max-width:860px){
+  #main{grid-template-columns:1fr}
+  #side{position:fixed;inset:var(--barh,41px) 0 auto;z-index:20;max-height:64dvh;border-right:0;border-bottom:1px solid var(--rule);
+        display:none;box-shadow:0 18px 40px -24px rgba(21,34,44,.6)}
+  body.side-open #side{display:grid}
+  #sidetoggle{display:inline-flex}
+  #log{height:74px}
+  .findwrap input{width:96px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ top bar ============ -->
+  <div class="bar">
+    <div class="brand"><b>Site&nbsp;Editor</b><span id="projname">no project</span></div>
+    <button class="btn ghost" id="sidetoggle" title="Show panels">☰</button>
+    <button class="btn" id="btnOpenHtml">Open HTML</button>
+    <button class="btn" id="btnOpenProj">Open project</button>
+    <button class="btn" id="btnSave" disabled>Save project</button>
+    <button class="btn" id="btnExportSingle" disabled>Export single file</button>
+    <button class="btn primary" id="btnExportZip" disabled>Export folder .zip</button>
+    <button class="btn" id="btnUndo" disabled title="Undo (Ctrl+Z)">Undo <kbd>⌃Z</kbd></button>
+    <span class="spacer"></span>
+    <span class="chip" id="storeChip" title="Where your work is being kept"><i class="dot"></i><span id="storeTxt">checking…</span></span>
+    <button class="btn ghost" id="btnTests" title="Run the built-in checks">Self-test</button>
+  </div>
+
+  <!-- ============ main ============ -->
+  <div id="main">
+    <aside id="side">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" data-pane="p-images">Images <span class="n" id="tImages">0</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-colors">Colors <span class="n" id="tColors">0</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-lib">Clients <span class="n" id="tLib">0</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-info">Info</button>
+      </div>
+      <div class="panes">
+
+        <section class="pane on" id="p-images">
+          <div class="lbl">Image slots on this page</div>
+          <p class="hint">Click a photo in the preview, or pick a slot here. <code>&lt;img&gt;</code>, inline <code>background-image</code> and <code>url()</code> inside <code>&lt;style&gt;</code> are all listed.</p>
+          <div class="list" id="imgList"></div>
+        </section>
+
+        <section class="pane" id="p-colors">
+          <div class="lbl">Colors in this page's CSS</div>
+          <p class="hint">Ranked by how often each one is used. Alpha in <code>rgba()</code> is kept when you recolor.</p>
+          <div class="swatches" id="colorList"></div>
+          <div class="hr"></div>
+          <div class="lbl">Recolor from a logo</div>
+          <p class="hint">Pull a palette out of a logo, then map the page onto it. Each color keeps its original lightness so contrast survives.</p>
+          <div class="row"><button class="btn" id="btnLogo">Read palette from logo…</button></div>
+          <div class="pal" id="palOut"></div>
+          <div class="row" id="palApplyRow" style="display:none">
+            <button class="btn primary" id="btnApplyPal">Recolor page to match</button>
+            <button class="btn" id="btnClearPal">Clear</button>
+          </div>
+        </section>
+
+        <section class="pane" id="p-lib">
+          <div class="lbl">Client library</div>
+          <p class="hint">Kept in this browser. Export a <code>.json</code> as your backup.</p>
+          <div class="list" id="libList"></div>
+        </section>
+
+        <section class="pane" id="p-info">
+          <div class="lbl">This project</div>
+          <div class="stats" id="stats"></div>
+          <div class="hr"></div>
+          <div class="lbl">Project name</div>
+          <div class="row"><input class="field" id="nameField" placeholder="e.g. Alvarez Roofing" disabled></div>
+          <div class="hr"></div>
+          <div class="lbl">Unresolved references</div>
+          <div id="problems"><div class="empty">Nothing to report.</div></div>
+          <div class="hr"></div>
+          <div class="lbl">Keys</div>
+          <p class="hint"><code>Ctrl/⌘ Z</code> undo · <code>Ctrl/⌘ S</code> save · <code>Ctrl/⌘ F</code> find · <code>Esc</code> cancel an edit · <code>Enter</code> commit.</p>
+        </section>
+
+      </div>
+    </aside>
+
+    <!-- ============ board ============ -->
+    <div id="board">
+      <div class="boardbar">
+        <div class="seg" id="vpSeg">
+          <button data-w="0" aria-pressed="true">Desktop</button>
+          <button data-w="768" aria-pressed="false">Tablet</button>
+          <button data-w="390" aria-pressed="false">Phone</button>
+        </div>
+        <div class="findwrap">
+          <input id="findInput" placeholder="Find text on page" aria-label="Find text on page">
+          <span class="cnt" id="findCnt"></span>
+          <button class="mini" id="findPrev" title="Previous match">↑</button>
+          <button class="mini" id="findNext" title="Next match">↓</button>
+        </div>
+        <span class="spacer"></span>
+        <span class="chip" id="editChip"><i class="dot"></i><span>click to edit</span></span>
+      </div>
+      <div class="stage" id="stage">
+        <div class="dim"><b id="dimTxt">—</b></div>
+        <div class="ruler" id="ruler"></div>
+        <div class="frame" id="frame"><iframe id="pv" title="Site preview" sandbox="allow-scripts allow-popups allow-modals"></iframe></div>
+        <div id="dropzone">
+          <div class="card">
+            <h1>Open a site to start</h1>
+            <p>Drop a client's <code>index.html</code> here, or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
+            <div class="row" style="justify-content:center">
+              <button class="btn primary" id="dzHtml">Choose HTML file</button>
+              <button class="btn" id="dzProj">Open project</button>
+              <button class="btn" id="dzDemo">Load test page</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ log ============ -->
+  <div id="logwrap">
+    <div class="loghead" id="loghead">
+      <span class="lbl">Activity</span>
+      <span class="spacer"></span>
+      <span class="chip" id="logCount"><i class="dot"></i><span>0 messages</span></span>
+      <span class="lbl" id="logToggle">hide</span>
+    </div>
+    <div id="log" role="log" aria-live="polite"></div>
+  </div>
+</div>
+
+<!-- ============ image picker ============ -->
+<div class="modal" id="mImg">
+  <div class="sheet">
+    <header><h2 id="mImgTitle">Replace image</h2><span class="spacer"></span><button class="btn ghost" data-close>✕</button></header>
+    <div class="body">
+      <div class="row"><button class="btn primary" id="mImgUpload">Upload from this computer</button>
+        <button class="btn" id="mImgHide">Hide this image</button>
+        <button class="btn" id="mImgReset">Put the original back</button></div>
+      <div class="hr"></div>
+      <div class="lbl">Alt text <span style="text-transform:none;letter-spacing:0">— describes the picture for search engines and screen readers</span></div>
+      <div class="row"><input class="field" id="mImgAlt" placeholder="e.g. New asphalt shingle roof in Dapitan"></div>
+      <div class="hr"></div>
+      <div class="lbl">Already used on this page</div>
+      <div class="grid" id="mImgGrid"></div>
+    </div>
+    <footer><span class="hint" id="mImgInfo" style="margin:0"></span><span class="spacer"></span><button class="btn" data-close>Done</button></footer>
+  </div>
+</div>
+
+<!-- ============ tests ============ -->
+<div class="modal" id="mTests">
+  <div class="sheet">
+    <header><h2>Self-test</h2><span class="spacer"></span><span class="chip" id="testChip"><i class="dot"></i><span>—</span></span><button class="btn ghost" data-close>✕</button></header>
+    <div class="body">
+      <p class="note">These run against a fixture page containing the things that break naive editors: a CSS background image, an <code>rgba()</code> overlay, a fixed-height grid, an inline <code>&lt;script&gt;</code>, an embedded map iframe, and a caption split across nested tags.</p>
+      <table class="tests"><tbody id="testRows"></tbody></table>
+    </div>
+    <footer><button class="btn" id="btnRerun">Run again</button><button class="btn" data-close>Close</button></footer>
+  </div>
+</div>
+
+<input type="file" id="fHtml" accept=".html,.htm,text/html" hidden>
+<input type="file" id="fProj" accept=".json,application/json" hidden>
+<input type="file" id="fImg" accept="image/*" hidden>
+<input type="file" id="fLogo" accept="image/*" hidden>
+<script>
+"use strict";
+/* ==========================================================================
+   0. Small utilities: hashing, base64, crc32, a stored-mode zip writer,
+      color parsing. Everything here is pure and synchronous so that the
+      rebuild/export path is deterministic.
+   ========================================================================== */
+
+const U = {};
+
+/* ---- SHA-1 (sync, no SubtleCrypto: that needs a secure context and this
+        file is meant to run from file://). Used for content-addressed
+        export filenames. ---- */
+U.sha1 = function(bytes){
+  const ml = bytes.length;
+  const blocks = Math.ceil((ml + 9) / 64);
+  const buf = new Uint8Array(blocks * 64);
+  buf.set(bytes); buf[ml] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(blocks*64 - 8, Math.floor(ml * 8 / 4294967296));
+  dv.setUint32(blocks*64 - 4, (ml * 8) >>> 0);
+  let h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0;
+  const w = new Uint32Array(80);
+  for(let b=0;b<blocks;b++){
+    for(let i=0;i<16;i++) w[i]=dv.getUint32(b*64+i*4);
+    for(let i=16;i<80;i++){const n=w[i-3]^w[i-8]^w[i-14]^w[i-16];w[i]=(n<<1)|(n>>>31);}
+    let a=h0,bb=h1,c=h2,d=h3,e=h4;
+    for(let i=0;i<80;i++){
+      let f,k;
+      if(i<20){f=(bb&c)|((~bb)&d);k=0x5A827999;}
+      else if(i<40){f=bb^c^d;k=0x6ED9EBA1;}
+      else if(i<60){f=(bb&c)|(bb&d)|(c&d);k=0x8F1BBCDC;}
+      else{f=bb^c^d;k=0xCA62C1D6;}
+      const t=(((a<<5)|(a>>>27))+f+e+k+w[i])>>>0;
+      e=d;d=c;c=((bb<<30)|(bb>>>2))>>>0;bb=a;a=t;
+    }
+    h0=(h0+a)>>>0;h1=(h1+bb)>>>0;h2=(h2+c)>>>0;h3=(h3+d)>>>0;h4=(h4+e)>>>0;
+  }
+  return [h0,h1,h2,h3,h4].map(x=>x.toString(16).padStart(8,'0')).join('');
+};
+
+/* ---- base64 <-> bytes ---- */
+U.b64ToBytes = function(b64){
+  const bin = atob(b64.replace(/\s+/g,''));
+  const out = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+};
+U.bytesToB64 = function(u8){
+  let s='';
+  for(let i=0;i<u8.length;i+=0x8000) s += String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));
+  return btoa(s);
+};
+U.utf8 = function(str){ return new TextEncoder().encode(str); };
+
+/* ---- data: URI helpers ---- */
+U.parseDataUri = function(uri){
+  const m = /^data:([^;,]*)(;[^,]*)?,(.*)$/s.exec(uri.trim());
+  if(!m) return null;
+  const mime = m[1] || 'application/octet-stream';
+  const isB64 = /;base64/i.test(m[2]||'');
+  try{
+    const bytes = isB64 ? U.b64ToBytes(m[3]) : U.utf8(decodeURIComponent(m[3]));
+    return {mime, bytes};
+  }catch(e){ return null; }
+};
+U.toDataUri = function(mime, bytes){ return 'data:'+mime+';base64,'+U.bytesToB64(bytes); };
+
+U.extFor = function(mime){
+  return ({'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/gif':'gif',
+           'image/svg+xml':'svg','image/webp':'webp','image/avif':'avif','image/x-icon':'ico',
+           'image/vnd.microsoft.icon':'ico','image/bmp':'bmp'})[String(mime).toLowerCase()] || 'bin';
+};
+
+U.fmtBytes = function(n){
+  if(n==null) return '—';
+  if(n < 1024) return n+' B';
+  if(n < 1024*1024) return (n/1024).toFixed(n<10240?1:0)+' KB';
+  return (n/1048576).toFixed(2)+' MB';
+};
+
+/* ---- CRC32 ---- */
+const CRC_TABLE = (function(){
+  const t = new Uint32Array(256);
+  for(let n=0;n<256;n++){
+    let c=n;
+    for(let k=0;k<8;k++) c = (c&1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1);
+    t[n]=c>>>0;
+  }
+  return t;
+})();
+U.crc32 = function(u8){
+  let c = 0xFFFFFFFF;
+  for(let i=0;i<u8.length;i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c>>>8);
+  return (c ^ 0xFFFFFFFF)>>>0;
+};
+
+/* ---- Stored-mode (uncompressed) zip writer.
+        Photos are already compressed; deflating them again saves almost
+        nothing and would mean shipping an inflate/deflate implementation.
+        Timestamps are pinned to 1980-01-01 so two exports of the same
+        project are byte-identical. ---- */
+U.zip = function(files){
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const DOS_TIME = 0, DOS_DATE = 0x0021; // 1980-01-01 00:00:00
+  for(const f of files){
+    const name = enc.encode(f.name);
+    const data = f.data;
+    const crc = U.crc32(data);
+    const lh = new Uint8Array(30 + name.length);
+    const dv = new DataView(lh.buffer);
+    dv.setUint32(0, 0x04034b50, true);
+    dv.setUint16(4, 20, true);          // version needed
+    dv.setUint16(6, 0x0800, true);      // UTF-8 filename flag
+    dv.setUint16(8, 0, true);           // method 0 = stored
+    dv.setUint16(10, DOS_TIME, true);
+    dv.setUint16(12, DOS_DATE, true);
+    dv.setUint32(14, crc, true);
+    dv.setUint32(18, data.length, true);
+    dv.setUint32(22, data.length, true);
+    dv.setUint16(26, name.length, true);
+    dv.setUint16(28, 0, true);
+    lh.set(name, 30);
+    parts.push(lh, data);
+
+    const ch = new Uint8Array(46 + name.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true);
+    cv.setUint16(12, DOS_TIME, true); cv.setUint16(14, DOS_DATE, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, offset, true);
+    ch.set(name, 46);
+    central.push(ch);
+    offset += lh.length + data.length;
+  }
+  let cdSize = 0; for(const c of central) cdSize += c.length;
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, central.length, true);
+  ev.setUint16(10, central.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, offset, true);
+  const all = parts.concat(central, [end]);
+  let total = 0; for(const p of all) total += p.length;
+  const out = new Uint8Array(total);
+  let o = 0; for(const p of all){ out.set(p, o); o += p.length; }
+  return out;
+};
+
+/* ---- Escape HTML so it can sit inside a <script> string without the
+        parser closing the block at the first literal closing tag. ---- */
+U.embedInScript = function(str){
+  /* The literal sequences are built up rather than written out, so that this
+     very line cannot put the browser's own tokenizer into escaped-script
+     state while it parses this editor. */
+  return String(str).replace(/<\/(script)/gi, '<\\/$1').replace(/<!\x2D\x2D/g, '<\\!\x2D\x2D');
+};
+
+/* ==========================================================================
+   1. Color parsing.
+   ========================================================================== */
+const C = {};
+const COLOR_RE = /#([0-9a-fA-F]{3,8})|\brgba?\(\s*(-?[\d.]+%?)\s*[,\s]\s*(-?[\d.]+%?)\s*[,\s]\s*(-?[\d.]+%?)\s*(?:[,/]\s*(-?[\d.]+%?)\s*)?\)/g;
+
+C.chan = function(v){
+  if(v.endsWith('%')) return Math.round(parseFloat(v)*255/100);
+  return Math.round(parseFloat(v));
+};
+C.clamp = function(n){ return Math.max(0, Math.min(255, n|0)); };
+C.hex = function(r,g,b){
+  return '#'+[r,g,b].map(x=>C.clamp(x).toString(16).padStart(2,'0')).join('');
+};
+/* Parse one regex match into {key:'#rrggbb', alpha, format, raw} or null. */
+C.fromMatch = function(m){
+  if(m[1] !== undefined){
+    const h = m[1];
+    if(h.length!==3 && h.length!==4 && h.length!==6 && h.length!==8) return null;
+    let r,g,b,a=null;
+    if(h.length<=4){
+      r=parseInt(h[0]+h[0],16); g=parseInt(h[1]+h[1],16); b=parseInt(h[2]+h[2],16);
+      if(h.length===4) a=h[3];
+    }else{
+      r=parseInt(h.slice(0,2),16); g=parseInt(h.slice(2,4),16); b=parseInt(h.slice(4,6),16);
+      if(h.length===8) a=h.slice(6,8);
+    }
+    return {key:C.hex(r,g,b), alpha:a, format:'hex'+h.length, raw:m[0]};
+  }
+  const r=C.chan(m[2]), g=C.chan(m[3]), b=C.chan(m[4]);
+  if([r,g,b].some(v=>!isFinite(v))) return null;
+  return {key:C.hex(r,g,b), alpha:(m[5]===undefined?null:m[5]), format:'rgb', raw:m[0]};
+};
+/* Re-emit a color in its original notation, keeping its original alpha. */
+C.emit = function(info, newHex){
+  const r=parseInt(newHex.slice(1,3),16), g=parseInt(newHex.slice(3,5),16), b=parseInt(newHex.slice(5,7),16);
+  if(info.format === 'hex3' || info.format === 'hex4'){
+    const short = (v)=>{const s=v.toString(16).padStart(2,'0'); return s[0]===s[1]?s[0]:null;};
+    const s = [r,g,b].map(short);
+    if(s.every(Boolean)) return '#'+s.join('') + (info.alpha||'');
+    return '#'+newHex.slice(1) + (info.alpha ? info.alpha+info.alpha : '');
+  }
+  if(info.format === 'hex6') return newHex;
+  if(info.format === 'hex8') return newHex + (info.alpha||'ff');
+  return info.alpha===null ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${info.alpha})`;
+};
+/* Rewrite every color token in a CSS string using map {'#rrggbb':'#rrggbb'} */
+C.apply = function(css, map){
+  if(!css || !map || !Object.keys(map).length) return css;
+  return css.replace(COLOR_RE, (...args)=>{
+    const m = args.slice(0, 6); m[0] = args[0];
+    const info = C.fromMatch(m);
+    if(!info) return args[0];
+    const to = map[info.key];
+    return to ? C.emit(info, to) : args[0];
+  });
+};
+C.count = function(css, into){
+  if(!css) return;
+  COLOR_RE.lastIndex = 0;
+  let m;
+  while((m = COLOR_RE.exec(css))){
+    const info = C.fromMatch(m);
+    if(info) into.set(info.key, (into.get(info.key)||0)+1);
+  }
+};
+/* HSL, used by the logo-palette mapping so recolored pages keep contrast. */
+C.toHsl = function(hex){
+  let r=parseInt(hex.slice(1,3),16)/255, g=parseInt(hex.slice(3,5),16)/255, b=parseInt(hex.slice(5,7),16)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), l=(mx+mn)/2;
+  let h=0,s=0;
+  if(mx!==mn){
+    const d=mx-mn;
+    s = l>0.5 ? d/(2-mx-mn) : d/(mx+mn);
+    if(mx===r) h=((g-b)/d + (g<b?6:0));
+    else if(mx===g) h=((b-r)/d + 2);
+    else h=((r-g)/d + 4);
+    h*=60;
+  }
+  return {h, s, l};
+};
+C.fromHsl = function(h,s,l){
+  h=((h%360)+360)%360;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs(((h/60)%2)-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0}else if(h<120){r=x;g=c;b=0}else if(h<180){r=0;g=c;b=x}
+  else if(h<240){r=0;g=x;b=c}else if(h<300){r=x;g=0;b=c}else{r=c;g=0;b=x}
+  return C.hex(Math.round((r+m)*255),Math.round((g+m)*255),Math.round((b+m)*255));
+};
+
+/* ==========================================================================
+   2. Element addressing.
+      A path is the chain of child-element indexes from <html>, e.g. "1.3.0".
+      Elements the editor injects carry data-vse and are skipped, so a path
+      means the same thing in the parsed document and in the live preview.
+      Paths are recomputed from the original HTML on every rebuild, so they
+      survive a save/reopen round trip.
+   ========================================================================== */
+function isInjected(el){ return !!(el && el.nodeType===1 && el.hasAttribute && el.hasAttribute('data-vse')); }
+
+function pathOf(el){
+  const parts = [];
+  let n = el;
+  while(n && n.nodeType===1 && n.parentNode && n.parentNode.nodeType===1){
+    let i = 0, sib = n.parentNode.firstElementChild;
+    while(sib && sib !== n){ if(!isInjected(sib)) i++; sib = sib.nextElementSibling; }
+    parts.unshift(i);
+    n = n.parentNode;
+  }
+  return parts.join('.');
+}
+function resolvePath(root, path){
+  let n = root;
+  if(path === '') return n;
+  for(const part of path.split('.')){
+    const want = +part;
+    let c = n.firstElementChild, j = 0, found = null;
+    while(c){
+      if(!isInjected(c)){ if(j === want){ found = c; break; } j++; }
+      c = c.nextElementSibling;
+    }
+    if(!found) return null;
+    n = found;
+  }
+  return n;
+}
+
+const URL_RE = /url\(\s*(['"]?)([^'")]*)\1\s*\)/g;
+const INLINE_TAGS = {B:1,I:1,EM:1,STRONG:1,SPAN:1,A:1,BR:1,SMALL:1,U:1,SUP:1,SUB:1,CODE:1,MARK:1,FONT:1,ABBR:1,S:1,STRIKE:1,BIG:1,TT:1,Q:1,CITE:1,VAR:1,WBR:1,LABEL:1,TIME:1,BDI:1,INS:1,DEL:1};
+
+/* ==========================================================================
+   3. The document model.
+   ========================================================================== */
+const Model = {};
+
+Model.parse = function(html){
+  return new DOMParser().parseFromString(html, 'text/html');
+};
+Model.doctypeOf = function(html){
+  const m = /^\s*<!DOCTYPE[^>]*>/i.exec(html);
+  return m ? m[0].trim() : '<!DOCTYPE html>';
+};
+Model.serialize = function(doc, srcHtml){
+  return Model.doctypeOf(srcHtml) + '\n' + doc.documentElement.outerHTML + '\n';
+};
+
+/* --- image slots: <img src>, inline style url(), url() inside <style> --- */
+Model.scanImages = function(doc){
+  const slots = [];
+  const all = doc.querySelectorAll('img,[style*="url("]');
+  for(const el of all){
+    if(isInjected(el)) continue;
+    if(el.tagName === 'IMG'){
+      slots.push({key:'img:'+pathOf(el), kind:'img', el, src:(el.getAttribute('src')||''),
+                  alt:el.getAttribute('alt')||'', label:'<img> ' + (el.getAttribute('alt') || el.className || pathOf(el))});
+    }
+    const st = el.getAttribute && el.getAttribute('style');
+    if(st && st.indexOf('url(') >= 0){
+      const p = pathOf(el);
+      let m, j = 0; URL_RE.lastIndex = 0;
+      while((m = URL_RE.exec(st))){
+        if(m[2] && m[2][0] !== '#'){
+          slots.push({key:'bg:'+p+':'+j, kind:'bg', el, urlIdx:j, src:m[2],
+                      label:'inline background · ' + (el.tagName.toLowerCase()) + (el.className? '.'+String(el.className).split(/\s+/)[0] : '')});
+        }
+        j++;
+      }
+    }
+  }
+  const styles = [...doc.querySelectorAll('style')].filter(s=>!isInjected(s));
+  styles.forEach((styleEl, si)=>{
+    const css = styleEl.textContent || '';
+    let m, j = 0; URL_RE.lastIndex = 0;
+    while((m = URL_RE.exec(css))){
+      if(m[2] && m[2][0] !== '#'){
+        const before = css.slice(Math.max(0, m.index-160), m.index);
+        const sel = (before.match(/([^{}]+)\{[^{}]*$/)||[])[1];
+        slots.push({key:'css:'+si+':'+j, kind:'css', styleEl, styleIdx:si, urlIdx:j, src:m[2],
+                    label:'CSS background · ' + (sel ? sel.trim().split('\n').pop().slice(0,42) : 'style block '+(si+1))});
+      }
+      j++;
+    }
+  });
+  return slots;
+};
+
+/* --- colors --- */
+Model.scanColors = function(doc){
+  const counts = new Map();
+  for(const s of doc.querySelectorAll('style')){ if(!isInjected(s)) C.count(s.textContent, counts); }
+  for(const el of doc.querySelectorAll('[style]')){ if(!isInjected(el)) C.count(el.getAttribute('style'), counts); }
+  return [...counts.entries()].sort((a,b)=> b[1]-a[1] || (a[0]<b[0]?-1:1)).map(([hex,count])=>({hex,count}));
+};
+
+/* --- editable text blocks: elements whose children are text plus inline tags --- */
+Model.isTextBlock = function(el){
+  if(!el || el.nodeType !== 1) return false;
+  if(/^(SCRIPT|STYLE|HTML|HEAD|BODY|IMG|IFRAME|SVG|VIDEO|AUDIO|CANVAS|NOSCRIPT|BR|HR|INPUT|SELECT|OPTION|TEXTAREA|META|LINK|TITLE)$/.test(el.tagName)) return false;
+  if(isInjected(el)) return false;
+  let hasText = false;
+  for(const n of el.childNodes){
+    if(n.nodeType === 3){ if(n.data.trim()) hasText = true; }
+    else if(n.nodeType === 1){ if(!INLINE_TAGS[n.tagName]) return false; }
+  }
+  return hasText;
+};
+
+/* ==========================================================================
+   4. Rebuild. Pure: reads the project and the asset table, writes nothing.
+      Building twice from the same state produces byte-identical output.
+   ========================================================================== */
+function humanAlt(name){
+  return String(name||'').replace(/\.[a-z0-9]+$/i,'').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+function build(project, assets, mode){
+  const doc = Model.parse(project.originalHtml);
+  const problems = [];
+  const files = new Map();
+
+  /* 4a. text edits ------------------------------------------------------- */
+  for(const path of Object.keys(project.edits).sort()){
+    const el = resolvePath(doc.documentElement, path);
+    if(!el){ problems.push({kind:'text', ref:path, msg:'Edited element no longer exists at '+path}); continue; }
+    el.innerHTML = project.edits[path];
+  }
+
+  /* 4b. images ----------------------------------------------------------- */
+  const slots = Model.scanImages(doc);
+  const seen = new Set(slots.map(s=>s.key));
+  for(const key of Object.keys(project.images)){
+    if(!seen.has(key)) problems.push({kind:'image', ref:key, msg:'Replaced image slot '+key+' is not in the page any more'});
+  }
+
+  const emit = (hash)=>{
+    const a = assets[hash];
+    if(!a){ problems.push({kind:'asset', ref:hash, msg:'Image data missing for '+hash.slice(0,10)}); return null; }
+    if(mode === 'folder'){
+      const name = 'images/' + hash.slice(0,12) + '.' + U.extFor(a.mime);
+      if(!files.has(name)) files.set(name, {name, data:U.b64ToBytes(a.b64), mime:a.mime});
+      return name;
+    }
+    return 'data:' + a.mime + ';base64,' + a.b64;
+  };
+
+  /* resolve what each slot should point at */
+  const resolveSlot = (slot)=>{
+    const ov = project.images[slot.key];
+    if(ov && ov.hidden) return {hidden:true};
+    if(ov && ov.hash) { const r = emit(ov.hash); return r ? {url:r, alt:ov.alt, hash:ov.hash} : {}; }
+    const h = project.srcIndex && project.srcIndex[slot.src];
+    if(h){ const r = emit(h); if(r) return {url:r, hash:h}; }
+    return {};                    // leave the original reference untouched
+  };
+
+  const cssPatch = new Map();     // styleIdx -> Map(urlIdx -> replacement|null)
+  for(const slot of slots){
+    const res = resolveSlot(slot);
+    slot.effective = res.url || (res.hidden ? null : slot.src);
+    slot.hidden = !!res.hidden;
+    if(slot.kind === 'img'){
+      if(res.hidden){
+        slot.el.setAttribute('style', ((slot.el.getAttribute('style')||'').replace(/;\s*$/,'') + ';display:none').replace(/^;/,''));
+      }else if(res.url){
+        slot.el.setAttribute('src', res.url);
+        if(res.alt !== undefined && res.alt !== null) slot.el.setAttribute('alt', res.alt);
+        /* stale srcset would win over the new src, and a <picture> source
+           would win over both */
+        slot.el.removeAttribute('srcset'); slot.el.removeAttribute('sizes');
+        slot.el.removeAttribute('data-src'); slot.el.removeAttribute('loading');
+        const pic = slot.el.parentElement;
+        if(pic && pic.tagName === 'PICTURE') [...pic.querySelectorAll('source')].forEach(s=>s.remove());
+      }
+    }else if(slot.kind === 'bg'){
+      if(res.hidden || res.url){
+        const st = slot.el.getAttribute('style') || '';
+        let j = 0;
+        const next = st.replace(URL_RE, (whole, q, u)=>{
+          const mine = (j++ === slot.urlIdx);
+          if(!mine || (u && u[0] === '#')) return whole;
+          return res.hidden ? 'none' : "url('" + res.url + "')";
+        });
+        slot.el.setAttribute('style', next);
+      }
+    }else{
+      if(res.hidden || res.url){
+        if(!cssPatch.has(slot.styleIdx)) cssPatch.set(slot.styleIdx, new Map());
+        cssPatch.get(slot.styleIdx).set(slot.urlIdx, res.hidden ? 'none' : 'url("' + res.url + '")');
+      }
+    }
+  }
+  if(cssPatch.size){
+    const styles = [...doc.querySelectorAll('style')].filter(s=>!isInjected(s));
+    for(const [si, patch] of cssPatch){
+      const el = styles[si]; if(!el) continue;
+      let j = 0;
+      el.textContent = (el.textContent||'').replace(URL_RE, (whole, q, u)=>{
+        const idx = j++;
+        if(u && u[0] === '#') return whole;
+        return patch.has(idx) ? patch.get(idx) : whole;
+      });
+    }
+  }
+
+  /* 4c. colors ----------------------------------------------------------- */
+  const colorList = Model.scanColors(doc);
+  if(Object.keys(project.colors).length){
+    for(const s of doc.querySelectorAll('style')){
+      if(!isInjected(s)) s.textContent = C.apply(s.textContent, project.colors);
+    }
+    for(const el of doc.querySelectorAll('[style]')){
+      if(!isInjected(el)) el.setAttribute('style', C.apply(el.getAttribute('style'), project.colors));
+    }
+  }
+
+  /* 4d. verify every stored text path still resolves ---------------------- */
+  return {
+    doc,
+    html: Model.serialize(doc, project.originalHtml),
+    slots, colors: colorList, problems, files
+  };
+}
+
+/* ==========================================================================
+   5. The preview agent.
+      The iframe is sandboxed without allow-same-origin, so the app cannot
+      touch its DOM. This function is stringified, injected into the preview
+      and talks to the app over postMessage.
+   ========================================================================== */
+const AGENT_CSS = `
+/* Rules that touch the page's own elements are wrapped in :where() so they
+   carry zero specificity and cannot beat the site's own stylesheet. */
+:where(img[data-vse-broken]){min-height:0;outline:1px dashed #DE521C;outline-offset:-1px;background:#FBE9E1}
+:where([data-vse-find]){background:#FFE58A;color:#15222C;border-radius:2px}
+:where([data-vse-find][data-vse-cur]){background:#DE521C;color:#fff}
+/* The editor's own furniture. These are our elements, so they are allowed
+   to be emphatic. */
+[data-vse-ui]{position:absolute!important;pointer-events:none!important;z-index:2147483646!important;
+  border:1px solid #DE521C!important;background:rgba(222,82,28,.10)!important;border-radius:2px!important;
+  transition:none!important;box-sizing:border-box!important}
+[data-vse-ui] b{position:absolute!important;top:-17px!important;left:-1px!important;background:#DE521C!important;
+  color:#fff!important;font:10px/1.6 ui-monospace,Menlo,monospace!important;padding:0 5px!important;
+  border-radius:2px 2px 0 0!important;white-space:nowrap!important;font-weight:400!important}
+[data-vse-editing]{outline:2px solid #DE521C!important;outline-offset:2px!important;background:rgba(255,255,255,.55)!important}
+`;
+
+function PREVIEW_AGENT(){
+  const CFG = window.__VSE || {};
+  const INLINE = {B:1,I:1,EM:1,STRONG:1,SPAN:1,A:1,BR:1,SMALL:1,U:1,SUP:1,SUB:1,CODE:1,MARK:1,FONT:1,ABBR:1,S:1,STRIKE:1,BIG:1,TT:1,Q:1,CITE:1,VAR:1,WBR:1,LABEL:1,TIME:1,BDI:1,INS:1,DEL:1};
+  const send = (m)=>{ try{ parent.postMessage(m, '*'); }catch(e){} };
+  const inj = (el)=> !!(el && el.nodeType===1 && el.hasAttribute && el.hasAttribute('data-vse'));
+
+  function pathOf(el){
+    const parts = [];
+    let n = el;
+    while(n && n.nodeType===1 && n.parentNode && n.parentNode.nodeType===1){
+      let i=0, sib=n.parentNode.firstElementChild;
+      while(sib && sib!==n){ if(!inj(sib)) i++; sib=sib.nextElementSibling; }
+      parts.unshift(i); n = n.parentNode;
+    }
+    return parts.join('.');
+  }
+  function resolvePath(path){
+    let n = document.documentElement;
+    if(path==='') return n;
+    const ps = path.split('.');
+    for(const p of ps){
+      const want=+p; let c=n.firstElementChild, j=0, hit=null;
+      while(c){ if(!inj(c)){ if(j===want){hit=c;break;} j++; } c=c.nextElementSibling; }
+      if(!hit) return null; n=hit;
+    }
+    return n;
+  }
+  function isTextBlock(el){
+    if(!el || el.nodeType!==1) return false;
+    if(/^(SCRIPT|STYLE|HTML|HEAD|BODY|IMG|IFRAME|SVG|VIDEO|AUDIO|CANVAS|NOSCRIPT|BR|HR|INPUT|SELECT|OPTION|TEXTAREA)$/.test(el.tagName)) return false;
+    if(inj(el)) return false;
+    let text=false;
+    for(const n of el.childNodes){
+      if(n.nodeType===3){ if(n.data.trim()) text=true; }
+      else if(n.nodeType===1){ if(!INLINE[n.tagName]) return false; }
+    }
+    return text;
+  }
+  function bgUrlIndex(el){
+    const st = el.getAttribute && el.getAttribute('style');
+    if(st && st.indexOf('url(')>=0) return {key:'bg:'+pathOf(el)+':0', kind:'bg'};
+    let cs=null; try{ cs = getComputedStyle(el); }catch(e){}
+    if(cs && cs.backgroundImage && cs.backgroundImage!=='none' && cs.backgroundImage.indexOf('url(')>=0){
+      const m = /url\((['"]?)([\s\S]*?)\1\)/.exec(cs.backgroundImage);
+      return {key:'css?'+pathOf(el), kind:'css', url:m ? m[2] : ''};
+    }
+    return null;
+  }
+  /* what, if anything, is editable under the pointer */
+  function targetFor(node){
+    let el = node;
+    while(el && el.nodeType!==1) el = el.parentNode;
+    while(el && el !== document.documentElement){
+      if(inj(el)) return null;
+      if(el.tagName === 'IMG') return {el, kind:'img', key:'img:'+pathOf(el), label:'image'};
+      if(isTextBlock(el)) return {el, kind:'text', path:pathOf(el), label:'text · <'+el.tagName.toLowerCase()+'>'};
+      const bg = bgUrlIndex(el);
+      if(bg) return {el, kind:bg.kind, key:bg.key, url:bg.url, label:'background image'};
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  /* ---- hover outline ---- */
+  const ui = document.createElement('div');
+  ui.setAttribute('data-vse',''); ui.setAttribute('data-vse-ui','');
+  ui.style.display='none'; ui.innerHTML='<b data-vse></b>';
+  const uiLabel = ui.firstChild;
+  document.documentElement.appendChild(ui);
+  let hover = null, editing = null;
+
+  function showUi(t){
+    if(!t || editing){ ui.style.display='none'; return; }
+    const r = t.el.getBoundingClientRect();
+    if(!r.width && !r.height){ ui.style.display='none'; return; }
+    ui.style.display='block';
+    ui.style.left=(r.left+scrollX)+'px'; ui.style.top=(r.top+scrollY)+'px';
+    ui.style.width=r.width+'px'; ui.style.height=r.height+'px';
+    uiLabel.textContent = t.label;
+  }
+  addEventListener('mousemove', (e)=>{
+    if(editing) return;
+    const t = targetFor(e.target);
+    if(t && hover && t.el===hover.el) return;
+    hover = t; showUi(t);
+  }, true);
+  addEventListener('mouseleave', ()=>{ hover=null; ui.style.display='none'; }, true);
+  addEventListener('scroll', ()=>{ if(hover) showUi(hover); send({t:'scroll', y:scrollY}); }, true);
+  addEventListener('resize', ()=>{ if(hover) showUi(hover); });
+
+  /* ---- editing ---- */
+  function stopEdit(commit){
+    if(!editing) return;
+    const {el, path, orig} = editing;
+    el.removeAttribute('contenteditable');
+    el.removeAttribute('data-vse-editing');
+    const cur = el.innerHTML;
+    editing = null;
+    if(!commit){ el.innerHTML = orig; return; }
+    if(cur === orig) return;
+    let html = cur;
+    /* contentEditable likes to swap spaces for non-breaking spaces; undo that
+       only when the original had none, so real &nbsp; in a template survive */
+    if(orig.indexOf('\u00a0') < 0) html = html.replace(/\u00a0/g, ' ');
+    send({t:'edit', path, html});
+  }
+  function startEdit(t){
+    clearFind(true);
+    ui.style.display='none';
+    editing = {el:t.el, path:t.path, orig:t.el.innerHTML};
+    t.el.setAttribute('contenteditable','true');
+    t.el.setAttribute('data-vse-editing','');
+    t.el.focus();
+    try{
+      const r = document.createRange(); r.selectNodeContents(t.el);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }catch(e){}
+    send({t:'editing', path:t.path});
+  }
+  addEventListener('keydown',(e)=>{
+    if(!editing){
+      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); send({t:'undo'}); }
+      return;
+    }
+    if(e.key === 'Escape'){ e.preventDefault(); stopEdit(false); send({t:'cancelled'}); }
+    else if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); stopEdit(true); }
+  }, true);
+  addEventListener('focusout',(e)=>{ if(editing && e.target===editing.el) stopEdit(true); }, true);
+
+  addEventListener('click',(e)=>{
+    const a = e.target.closest && e.target.closest('a[href]');
+    if(a) e.preventDefault();                       // never navigate away from the preview
+    if(editing){
+      if(editing.el.contains(e.target)) return;     // let the caret move around
+      stopEdit(true);
+    }
+    const t = targetFor(e.target);
+    if(!t) return;
+    e.preventDefault(); e.stopPropagation();
+    if(t.kind === 'text') startEdit(t);
+    else send({t:'pick', key:t.key, kind:t.kind, url:t.url, path:pathOf(t.el)});
+  }, true);
+  addEventListener('submit',(e)=>e.preventDefault(), true);
+
+  /* ---- broken images get a visible target so they can still be replaced ---- */
+  function markBroken(){
+    for(const im of document.images){
+      if(im.complete && im.naturalWidth === 0) im.setAttribute('data-vse-broken','');
+      else im.removeAttribute('data-vse-broken');
+    }
+  }
+  addEventListener('load', ()=>{ markBroken(); report(); });
+  addEventListener('error', (e)=>{ if(e.target && e.target.tagName==='IMG') e.target.setAttribute('data-vse-broken',''); }, true);
+
+  /* ---- find ---- */
+  let marks = [], cur = -1;
+  function clearFind(silent){
+    for(const m of marks){
+      const p = m.parentNode; if(!p) continue;
+      while(m.firstChild) p.insertBefore(m.firstChild, m);
+      p.removeChild(m); p.normalize();
+    }
+    marks = []; cur = -1;
+    if(!silent) send({t:'find', n:0, i:0});
+  }
+  function doFind(q){
+    clearFind(true);
+    if(!q){ send({t:'find', n:0, i:0}); return; }
+    const needle = q.toLowerCase();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(n){
+        if(!n.data || !n.data.trim()) return NodeFilter.FILTER_REJECT;
+        let p = n.parentNode;
+        while(p && p.nodeType===1){
+          if(inj(p) || p.tagName==='SCRIPT' || p.tagName==='STYLE') return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return n.data.toLowerCase().indexOf(needle)>=0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+    const hits = []; let n;
+    while((n = walker.nextNode())) hits.push(n);
+    for(const node of hits){
+      let text = node.data, idx = text.toLowerCase().indexOf(needle), work = node;
+      while(idx >= 0){
+        const after = work.splitText(idx);
+        const rest = after.splitText(q.length);
+        const span = document.createElement('span');
+        span.setAttribute('data-vse',''); span.setAttribute('data-vse-find','');
+        after.parentNode.insertBefore(span, after);
+        span.appendChild(after);
+        marks.push(span);
+        work = rest; text = work.data; idx = text.toLowerCase().indexOf(needle);
+      }
+    }
+    if(marks.length){ cur = 0; focusMark(); }
+    send({t:'find', n:marks.length, i:marks.length?1:0});
+  }
+  function focusMark(){
+    marks.forEach((m,i)=> i===cur ? m.setAttribute('data-vse-cur','') : m.removeAttribute('data-vse-cur'));
+    const m = marks[cur];
+    if(m) m.scrollIntoView({block:'center', behavior:'smooth'});
+  }
+  function step(d){
+    if(!marks.length) return;
+    cur = (cur + d + marks.length) % marks.length;
+    focusMark();
+    send({t:'find', n:marks.length, i:cur+1});
+  }
+
+  function report(){
+    markBroken();
+    send({t:'ready', h:document.documentElement.scrollHeight, imgs:document.images.length});
+  }
+
+  addEventListener('message',(e)=>{
+    const m = e.data || {};
+    if(m.t === 'find') doFind(m.q);
+    else if(m.t === 'findStep') step(m.d);
+    else if(m.t === 'clearFind') clearFind();
+    else if(m.t === 'scrollTo') scrollTo(0, m.y||0);
+    else if(m.t === 'reveal'){
+      const el = resolvePath(m.path||'');
+      if(el){ el.scrollIntoView({block:'center', behavior:'smooth'}); hover={el, label:m.label||'selected'}; showUi(hover); }
+    }
+  });
+
+  report();
+  setTimeout(report, 400);
+}
+
+function previewHtml(html, cfg){
+  const inject = '<style data-vse>' + AGENT_CSS + '</style>'
+    + '<' + 'script data-vse>window.__VSE=' + U.embedInScript(JSON.stringify(cfg||{})) + ';('
+    + PREVIEW_AGENT.toString() + ')();<\/script>';
+  const i = html.toLowerCase().lastIndexOf('</body>');
+  return i >= 0 ? html.slice(0,i) + inject + html.slice(i) : html + inject;
+}
+
+/* ==========================================================================
+   6. Storage. IndexedDB, falling back to localStorage, falling back to
+      memory. Whichever is live is shown in the top bar, because that is the
+      difference between "my work survives a refresh" and "it doesn't".
+   ========================================================================== */
+const Store = {
+  mode:'memory', db:null, mem:new Map(), note:'',
+  async init(){
+    try{
+      this.db = await new Promise((res, rej)=>{
+        const rq = indexedDB.open('site-editor', 1);
+        rq.onupgradeneeded = ()=> rq.result.createObjectStore('projects', {keyPath:'id'});
+        rq.onsuccess = ()=> res(rq.result);
+        rq.onerror = ()=> rej(rq.error);
+        rq.onblocked = ()=> rej(new Error('blocked'));
+        setTimeout(()=>rej(new Error('timeout')), 4000);
+      });
+      await this.list();
+      this.mode = 'idb'; this.note = 'Projects and images are kept in this browser.';
+      return;
+    }catch(e){ this.db = null; }
+    try{
+      localStorage.setItem('vse.probe','1'); localStorage.removeItem('vse.probe');
+      this.mode = 'local';
+      this.note = 'IndexedDB is unavailable. localStorage caps out near 5 MB, so pages with several photos will fail to save — export a .json after every session.';
+      return;
+    }catch(e){}
+    this.mode = 'memory';
+    this.note = 'No storage available. Everything is in memory and a refresh loses it. Export a .json before you close this tab.';
+  },
+  _tx(mode){ return this.db.transaction('projects', mode).objectStore('projects'); },
+  _req(rq){ return new Promise((res,rej)=>{ rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); },
+  async list(){
+    if(this.mode==='idb' || this.db) return (await this._req(this._tx('readonly').getAll())).sort((a,b)=>b.updatedAt-a.updatedAt);
+    if(this.mode==='local'){
+      const out=[];
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(k && k.startsWith('vse.p.')){ try{ out.push(JSON.parse(localStorage.getItem(k))); }catch(e){} }
+      }
+      return out.sort((a,b)=>b.updatedAt-a.updatedAt);
+    }
+    return [...this.mem.values()].sort((a,b)=>b.updatedAt-a.updatedAt);
+  },
+  async put(p){
+    if(this.mode==='idb') return this._req(this._tx('readwrite').put(p));
+    if(this.mode==='local') return localStorage.setItem('vse.p.'+p.id, JSON.stringify(p));
+    this.mem.set(p.id, p);
+  },
+  async get(id){
+    if(this.mode==='idb') return this._req(this._tx('readonly').get(id));
+    if(this.mode==='local'){ const s=localStorage.getItem('vse.p.'+id); return s?JSON.parse(s):null; }
+    return this.mem.get(id) || null;
+  },
+  async del(id){
+    if(this.mode==='idb') return this._req(this._tx('readwrite').delete(id));
+    if(this.mode==='local') return localStorage.removeItem('vse.p.'+id);
+    this.mem.delete(id);
+  }
+};
+
+/* ==========================================================================
+   7. App state.
+   ========================================================================== */
+const S = {
+  project:null,            // persisted document state
+  assets:Object.create(null), // hash -> {mime,b64,bytes,w,h,name,from}
+  built:null,
+  undo:[], redo:[],
+  selKey:null, pickKey:null,
+  findN:0, findI:0,
+  scrollY:0, vp:0, dirty:false, palette:null
+};
+const UNDO_MAX = 60;
+
+const $ = (s)=>document.querySelector(s);
+const $$ = (s)=>[...document.querySelectorAll(s)];
+const el = (t, cls, txt)=>{ const e=document.createElement(t); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; };
+
+let logN = 0;
+function log(msg, level){
+  const line = el('div','ln '+(level||'info'));
+  const t = el('time', null, new Date().toLocaleTimeString([], {hour12:false}));
+  line.append(t, el('span', null, msg));
+  $('#log').append(line);
+  $('#log').scrollTop = 1e9;
+  logN++;
+  $('#logCount').className = 'chip ' + (level==='err'?'bad':level==='warn'?'warn':'');
+  $('#logCount').lastElementChild.textContent = logN + ' message' + (logN===1?'':'s');
+  if(level==='err' && $('#logwrap').classList.contains('collapsed')) toggleLog();
+}
+function fail(msg, e){ log(msg + (e ? ' — ' + (e.message||e) : ''), 'err'); }
+
+function snapshot(){
+  if(!S.project) return;
+  S.undo.push(JSON.stringify({edits:S.project.edits, images:S.project.images, colors:S.project.colors}));
+  if(S.undo.length > UNDO_MAX) S.undo.shift();
+  S.redo.length = 0;
+  S.dirty = true;
+  $('#btnUndo').disabled = false;
+}
+function undo(){
+  if(!S.undo.length || !S.project) return;
+  const prev = JSON.parse(S.undo.pop());
+  S.project.edits = prev.edits; S.project.images = prev.images; S.project.colors = prev.colors;
+  $('#btnUndo').disabled = !S.undo.length;
+  rebuild(true);
+  log('Undo — ' + S.undo.length + ' step' + (S.undo.length===1?'':'s') + ' left');
+}
+
+/* ==========================================================================
+   8. Loading a site.
+   ========================================================================== */
+function newProject(html, name){
+  return {
+    v:1, id:'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+    name: name || 'Untitled site',
+    createdAt: Date.now(), updatedAt: Date.now(),
+    originalHtml: html,
+    edits:Object.create(null), images:Object.create(null), colors:Object.create(null),
+    assets:Object.create(null)
+  };
+}
+
+/* Register every data: image already embedded in the source so it can be
+   deduplicated, counted, and written out as a real file on folder export. */
+function indexSource(project){
+  const doc = Model.parse(project.originalHtml);
+  const slots = Model.scanImages(doc);
+  const idx = Object.create(null);
+  let n = 0, bad = 0;
+  for(const s of slots){
+    if(!/^data:image\//i.test(s.src) || idx[s.src]) continue;
+    const p = U.parseDataUri(s.src);
+    if(!p){ bad++; fail('Could not decode an embedded image in ' + s.label); continue; }
+    const hash = U.sha1(p.bytes);
+    idx[s.src] = hash;
+    if(!S.assets[hash]) S.assets[hash] = {mime:p.mime, b64:U.bytesToB64(p.bytes), bytes:p.bytes.length, name:'embedded.'+U.extFor(p.mime), from:'page'};
+    n++;
+  }
+  project.srcIndex = idx;
+  return {n, bad, slots:slots.length};
+}
+
+function openHtml(html, name){
+  try{
+    S.project = newProject(html, name);
+    S.assets = Object.create(null);
+    S.undo.length = 0; S.redo.length = 0; S.selKey = null; S.dirty = true;
+    const info = indexSource(S.project);
+    log('Opened ' + (name||'site') + ' — ' + U.fmtBytes(html.length) + ' of HTML, ' + info.slots + ' image slot' + (info.slots===1?'':'s') + ', ' + info.n + ' already embedded', 'ok');
+    $('#dropzone').style.display = 'none';
+    $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
+    $('#nameField').value = S.project.name;
+    $('#projname').textContent = S.project.name;
+    rebuild(true);
+  }catch(e){ fail('That file could not be opened', e); }
+}
+
+function openProjectData(p){
+  try{
+    if(!p || !p.originalHtml) throw new Error('not a project file');
+    S.project = p;
+    S.project.edits = p.edits || {}; S.project.images = p.images || {}; S.project.colors = p.colors || {};
+    S.assets = Object.create(null);
+    for(const [h, a] of Object.entries(p.assets||{})) S.assets[h] = a;
+    S.undo.length = 0; S.redo.length = 0; S.dirty = false;
+    indexSource(S.project);
+    $('#dropzone').style.display = 'none';
+    $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
+    $('#nameField').value = p.name || '';
+    $('#projname').textContent = p.name || 'project';
+    const r = rebuild(true);
+    const edits = Object.keys(S.project.edits).length, imgs = Object.keys(S.project.images).length;
+    log('Reopened "' + p.name + '" — ' + edits + ' text edit' + (edits===1?'':'s') + ', ' + imgs + ' image change' + (imgs===1?'':'s') + ', ' + Object.keys(S.project.colors).length + ' recolor(s)', 'ok');
+    if(r.problems.length) fail(r.problems.length + ' saved reference(s) no longer resolve — see the Info panel');
+    else log('Every saved reference resolved.', 'ok');
+  }catch(e){ fail('That project file could not be opened', e); }
+}
+
+/* ==========================================================================
+   9. Rebuild + render.
+   ========================================================================== */
+let rebuildToken = 0;
+function rebuild(reloadPreview){
+  if(!S.project) return {problems:[]};
+  let r;
+  try{
+    r = build(S.project, S.assets, 'preview');
+  }catch(e){ fail('Rebuild failed', e); return {problems:[]}; }
+  S.built = r;
+  renderImages(r); renderColors(r); renderStats(r); renderProblems(r);
+  if(reloadPreview){
+    const token = ++rebuildToken;
+    const pv = $('#pv');
+    pv.onload = ()=>{
+      if(token !== rebuildToken) return;
+      try{ pv.contentWindow.postMessage({t:'scrollTo', y:S.scrollY}, '*'); }catch(e){}
+      if($('#findInput').value) sendPv({t:'find', q:$('#findInput').value});
+    };
+    pv.srcdoc = previewHtml(r.html, {});
+  }
+  return r;
+}
+function sendPv(m){ try{ $('#pv').contentWindow.postMessage(m, '*'); }catch(e){} }
+
+function renderStats(r){
+  const uploaded = Object.values(S.assets).filter(a=>a.from==='upload').length;
+  const bytes = Object.values(S.assets).reduce((n,a)=>n+(a.bytes||0),0);
+  $('#stats').innerHTML = '';
+  const add = (label, val)=>{ const d=el('div','stat'); d.append(el('b',null,val), el('span',null,label)); $('#stats').append(d); };
+  add('image slots', String(r.slots.length));
+  add('images stored', String(Object.keys(S.assets).length));
+  add('uploaded', String(uploaded));
+  add('image data', U.fmtBytes(bytes));
+  add('colors found', String(r.colors.length));
+  add('text edits', String(Object.keys(S.project.edits).length));
+  add('page size', U.fmtBytes(r.html.length));
+  add('undo depth', String(S.undo.length));
+  $('#tImages').textContent = r.slots.length;
+  $('#tColors').textContent = r.colors.length;
+}
+
+function renderProblems(r){
+  const box = $('#problems'); box.innerHTML = '';
+  if(!r.problems.length){ box.append(el('div','empty','Nothing to report.')); return; }
+  for(const p of r.problems){
+    const d = el('div','item');
+    d.append(el('span','tag edited', p.kind), el('div','meta'), el('span'));
+    d.children[1].append(el('div','nm', p.msg), el('div','sub', p.ref));
+    box.append(d);
+  }
+}
+
+function slotThumb(slot){
+  const t = el('div','thumb');
+  const src = slot.effective;
+  if(src && !slot.hidden){ t.classList.add('has'); t.style.setProperty('--img','url("'+src.replace(/"/g,'\\"')+'")'); }
+  return t;
+}
+
+function renderImages(r){
+  const box = $('#imgList'); box.innerHTML = '';
+  if(!r.slots.length){ box.append(el('div','empty','No images on this page yet.')); return; }
+  for(const slot of r.slots){
+    const ov = S.project.images[slot.key];
+    const row = el('div','item' + (S.selKey===slot.key ? ' sel':''));
+    row.append(slotThumb(slot));
+    const meta = el('div','meta');
+    meta.append(el('div','nm', slot.label));
+    const sub = el('div','sub');
+    sub.textContent = ov ? (ov.hidden ? 'hidden' : 'replaced · ' + ov.hash.slice(0,8)) : (slot.src.startsWith('data:') ? 'embedded ' + slot.src.slice(5, slot.src.indexOf(';')) : slot.src.slice(0,44));
+    meta.append(sub);
+    row.append(meta);
+    const act = el('div','row');
+    const b = el('button','mini','Change');
+    b.onclick = ()=> openPicker(slot);
+    act.append(b);
+    row.append(act);
+    row.onclick = (e)=>{ if(e.target===b) return; S.selKey=slot.key; renderImages(r);
+      if(slot.kind!=='css' && slot.el) sendPv({t:'reveal', path:pathOf(slot.el), label:slot.label}); };
+    box.append(row);
+  }
+}
+
+function renderColors(r){
+  const box = $('#colorList'); box.innerHTML = '';
+  if(!r.colors.length){ box.append(el('div','empty','No colors found in this page\u2019s CSS.')); return; }
+  for(const c of r.colors){
+    const cur = S.project.colors[c.hex] || c.hex;
+    const row = el('div','sw');
+    const wrap = el('label','chipc'); wrap.style.background = cur;
+    const inp = el('input'); inp.type = 'color'; inp.value = cur;
+    inp.oninput = ()=>{ wrap.style.background = inp.value; };
+    inp.onchange = ()=>{
+      snapshot();
+      if(inp.value.toLowerCase() === c.hex) delete S.project.colors[c.hex];
+      else S.project.colors[c.hex] = inp.value.toLowerCase();
+      log('Recolored ' + c.hex + ' → ' + inp.value.toLowerCase() + ' (' + c.count + ' occurrence' + (c.count===1?'':'s') + ')');
+      rebuild(true);
+    };
+    wrap.append(inp);
+    const meta = el('div');
+    meta.append(el('div','hex', cur === c.hex ? c.hex : c.hex + ' → ' + cur));
+    meta.append(el('div','cnt', c.count + '×'));
+    row.append(wrap, meta);
+    const rst = el('button','mini','Reset');
+    rst.disabled = !S.project.colors[c.hex];
+    rst.onclick = ()=>{ snapshot(); delete S.project.colors[c.hex]; rebuild(true); };
+    row.append(el('span'), rst);
+    box.append(row);
+  }
+}
+
+/* ==========================================================================
+   10. Messages from the preview.
+   ========================================================================== */
+addEventListener('message', (e)=>{
+  if(!$('#pv') || e.source !== $('#pv').contentWindow) return;
+  const m = e.data || {};
+  if(m.t === 'edit'){
+    snapshot();
+    S.project.edits[m.path] = m.html;
+    log('Text updated at ' + m.path);
+    rebuild(false);            // the preview already shows it; don't reload
+  }
+  else if(m.t === 'pick'){
+    if(m.kind === 'css'){
+      /* the click landed on a background painted by a rule in a <style>
+         block, so match it by the URL the browser actually resolved */
+      const cands = (S.built.slots||[]).filter(s=>s.kind==='css');
+      let slot = cands.find(s=>s.effective === m.url);
+      if(!slot && m.url) slot = cands.find(s=>s.effective && m.url.endsWith(s.effective));
+      if(slot) return openPicker(slot);
+      log('That background is painted by a <style> rule the editor could not match. Pick it from the Images panel.', 'warn');
+      setTab('p-images');
+      return;
+    }
+    const slot = (S.built.slots||[]).find(s=>s.key===m.key);
+    if(slot) openPicker(slot); else fail('Could not match that image to a slot (' + m.key + ')');
+  }
+  else if(m.t === 'scroll'){ S.scrollY = m.y; }
+  else if(m.t === 'find'){ S.findN = m.n; S.findI = m.i; $('#findCnt').textContent = m.n ? (m.i + '/' + m.n) : ($('#findInput').value ? 'none' : ''); }
+  else if(m.t === 'undo'){ undo(); }
+  else if(m.t === 'editing'){ $('#editChip').lastElementChild.textContent = 'editing — Esc cancels'; $('#editChip').className='chip warn'; }
+  else if(m.t === 'cancelled'){ $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip'; }
+  else if(m.t === 'ready'){ $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip'; }
+});
+
+/* ==========================================================================
+   11. Image processing: downscale, re-encode, hash.
+   ========================================================================== */
+const MAX_W = 1700, JPEG_Q = 0.82;
+
+function loadBitmap(file){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{ URL.revokeObjectURL(url); res(img); };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('the browser could not decode it')); };
+    img.src = url;
+  });
+}
+
+async function processImage(file){
+  const type = (file.type || '').toLowerCase();
+  const isSvg = type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+  const isGif = type === 'image/gif' || /\.gif$/i.test(file.name);
+  if(isSvg || isGif){
+    /* SVG stays vector, GIF keeps its animation — re-encoding either is a loss */
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const mime = isSvg ? 'image/svg+xml' : 'image/gif';
+    return finishAsset(mime, buf, file.name, 0, 0, isSvg ? 'kept as SVG' : 'kept as GIF');
+  }
+  const img = await loadBitmap(file);
+  const scale = img.naturalWidth > MAX_W ? MAX_W / img.naturalWidth : 1;
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d');
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, 0, 0, w, h);
+  const keepPng = type === 'image/png' || /\.png$/i.test(file.name);   // logos need the alpha channel
+  const mime = keepPng ? 'image/png' : 'image/jpeg';
+  const dataUri = cv.toDataURL(mime, JPEG_Q);
+  const parsed = U.parseDataUri(dataUri);
+  if(!parsed) throw new Error('the browser refused to encode it');
+  const note = (scale < 1 ? 'resized ' + img.naturalWidth + '→' + w + 'px' : 'kept at ' + w + 'px')
+             + ', ' + (keepPng ? 'PNG' : 'JPEG q' + JPEG_Q);
+  return finishAsset(mime, parsed.bytes, file.name, w, h, note);
+}
+
+function finishAsset(mime, bytes, name, w, h, note){
+  const hash = U.sha1(bytes);
+  if(!S.assets[hash]) S.assets[hash] = {mime, b64:U.bytesToB64(bytes), bytes:bytes.length, w, h, name, from:'upload'};
+  else S.assets[hash].from = 'upload';
+  return {hash, note, bytes:bytes.length, name};
+}
+
+/* ==========================================================================
+   12. Image picker.
+   ========================================================================== */
+function openPicker(slot){
+  S.pickKey = slot.key; S.selKey = slot.key;
+  const ov = S.project.images[slot.key];
+  $('#mImgTitle').textContent = 'Change image — ' + slot.label;
+  $('#mImgAlt').value = ov && ov.alt != null ? ov.alt : (slot.kind==='img' ? (slot.alt||'') : '');
+  $('#mImgAlt').disabled = slot.kind !== 'img';
+  $('#mImgInfo').textContent = slot.hidden ? 'Currently hidden.' :
+    (slot.effective||'').startsWith('data:') ? 'Currently an embedded image.' : 'Currently ' + (slot.effective||'—').slice(0,70);
+  const grid = $('#mImgGrid'); grid.innerHTML = '';
+  const entries = Object.entries(S.assets);
+  if(!entries.length) grid.append(el('div','empty','Nothing here yet — upload one.'));
+  for(const [hash, a] of entries){
+    const cell = el('div','gimg');
+    const t = el('div','thumb has');
+    t.style.setProperty('--img','url("data:'+a.mime+';base64,'+a.b64+'")');
+    cell.append(t, el('div','sub', (a.from==='upload'?'':'from page · ') + U.fmtBytes(a.bytes)));
+    cell.onclick = ()=> setImage(hash, a.name);
+    grid.append(cell);
+  }
+  $('#mImg').classList.add('on');
+  renderImages(S.built);
+}
+function setImage(hash, name){
+  const key = S.pickKey; if(!key) return;
+  snapshot();
+  const slot = (S.built.slots||[]).find(s=>s.key===key);
+  const alt = $('#mImgAlt').disabled ? undefined : ($('#mImgAlt').value || humanAlt(name));
+  S.project.images[key] = {hash, alt};
+  if(alt !== undefined) $('#mImgAlt').value = alt;
+  log('Image replaced at ' + key + ' → ' + hash.slice(0,12) + '.' + U.extFor(S.assets[hash].mime), 'ok');
+  rebuild(true);
+  openPicker((S.built.slots||[]).find(s=>s.key===key) || slot);
+}
+$('#mImgUpload').onclick = ()=> $('#fImg').click();
+$('#fImg').onchange = async (e)=>{
+  const f = e.target.files[0]; e.target.value = '';
+  if(!f) return;
+  try{
+    const a = await processImage(f);
+    log('Prepared ' + f.name + ' — ' + a.note + ', ' + U.fmtBytes(a.bytes), 'ok');
+    setImage(a.hash, f.name);
+  }catch(err){ fail('Could not use ' + f.name, err); }
+};
+$('#mImgHide').onclick = ()=>{
+  if(!S.pickKey) return;
+  snapshot(); S.project.images[S.pickKey] = {hidden:true};
+  log('Image hidden at ' + S.pickKey);
+  const k = S.pickKey; rebuild(true);
+  openPicker((S.built.slots||[]).find(s=>s.key===k));
+};
+$('#mImgReset').onclick = ()=>{
+  if(!S.pickKey) return;
+  snapshot(); delete S.project.images[S.pickKey];
+  log('Original image restored at ' + S.pickKey);
+  const k = S.pickKey; rebuild(true);
+  openPicker((S.built.slots||[]).find(s=>s.key===k));
+};
+$('#mImgAlt').onchange = ()=>{
+  const ov = S.project.images[S.pickKey];
+  if(!ov || ov.hidden) return;
+  snapshot(); ov.alt = $('#mImgAlt').value;
+  log('Alt text updated at ' + S.pickKey);
+  rebuild(true);
+};
+$$('[data-close]').forEach(b=> b.onclick = ()=> b.closest('.modal').classList.remove('on'));
+$$('.modal').forEach(m=> m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('on'); }));
+
+/* ==========================================================================
+   13. Export.
+   ========================================================================== */
+function download(name, parts, mime){
+  const blob = new Blob(parts, {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 8000);
+  return blob.size;
+}
+function safeName(){
+  return (S.project.name || 'site').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'site';
+}
+function verifyDeterminism(mode){
+  const a = build(S.project, S.assets, mode);
+  const b = build(S.project, S.assets, mode);
+  if(a.html !== b.html){ fail('Rebuild is not deterministic — two builds differed. Not exporting.'); return null; }
+  return a;
+}
+$('#btnExportSingle').onclick = ()=>{
+  const r = verifyDeterminism('single'); if(!r) return;
+  if(r.problems.length) fail(r.problems.length + ' problem(s) in this build — check the Info panel before you send this out.');
+  const size = download(safeName()+'.html', [r.html], 'text/html');
+  log('Exported one file — ' + safeName() + '.html, ' + U.fmtBytes(size) + ' with every image embedded', 'ok');
+};
+$('#btnExportZip').onclick = ()=>{
+  const r = verifyDeterminism('folder'); if(!r) return;
+  if(r.problems.length) fail(r.problems.length + ' problem(s) in this build — check the Info panel before you upload this.');
+  const files = [{name:'index.html', data:U.utf8(r.html)}, ...[...r.files.values()].sort((a,b)=>a.name<b.name?-1:1)];
+  const zip = U.zip(files);
+  const size = download(safeName()+'.zip', [zip], 'application/zip');
+  const imgBytes = files.slice(1).reduce((n,f)=>n+f.data.length,0);
+  log('Exported folder — index.html + ' + (files.length-1) + ' image' + (files.length===2?'':'s') +
+      ' (' + U.fmtBytes(imgBytes) + '), zip ' + U.fmtBytes(size) + '. Filenames are content hashes, so unchanged images keep their names on the next deploy.', 'ok');
+};
+
+/* ==========================================================================
+   14. Save / load / library.
+   ========================================================================== */
+function projectForSave(){
+  const p = S.project;
+  const used = new Set(Object.values(p.images).map(o=>o && o.hash).filter(Boolean));
+  const assets = {};
+  for(const h of used) if(S.assets[h]) assets[h] = S.assets[h];
+  return {
+    v:1, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
+    originalHtml:p.originalHtml,
+    edits:p.edits, images:p.images, colors:p.colors, assets
+    /* srcIndex is derived from originalHtml, so it is never written out */
+  };
+}
+async function saveProject(silent){
+  if(!S.project) return;
+  const p = projectForSave();
+  S.project.updatedAt = p.updatedAt;
+  try{
+    await Store.put(p);
+    S.dirty = false;
+    if(!silent) log('Saved "' + p.name + '" to the client library (' + Store.mode + ')', 'ok');
+    renderLib();
+  }catch(e){
+    fail('Could not save to the client library. Export a .json instead', e);
+  }
+  return p;
+}
+$('#btnSave').onclick = async ()=>{
+  const p = await saveProject();
+  if(!p) return;
+  const size = download(safeName()+'.json', [JSON.stringify(p)], 'application/json');
+  log('Backup written — ' + safeName() + '.json, ' + U.fmtBytes(size), 'ok');
+};
+async function renderLib(){
+  const box = $('#libList'); box.innerHTML = '';
+  let items = [];
+  try{ items = await Store.list(); }catch(e){ fail('Could not read the client library', e); }
+  $('#tLib').textContent = items.length;
+  if(!items.length){ box.append(el('div','empty','No saved sites yet.')); return; }
+  for(const it of items){
+    const row = el('div','item');
+    row.append(el('span','tag', new Date(it.updatedAt).toLocaleDateString()));
+    const meta = el('div','meta');
+    meta.append(el('div','nm', it.name || 'Untitled'),
+                el('div','sub', Object.keys(it.edits||{}).length + ' edits · ' + Object.keys(it.assets||{}).length + ' images · ' + U.fmtBytes((it.originalHtml||'').length)));
+    row.append(meta);
+    const act = el('div','row');
+    const o = el('button','mini','Open'); o.onclick = async ()=> openProjectData(await Store.get(it.id));
+    const x = el('button','mini','Delete');
+    x.onclick = async ()=>{ if(confirm('Delete "'+it.name+'" from this browser? Your exported files are not touched.')){ await Store.del(it.id); log('Deleted "'+it.name+'" from the library','warn'); renderLib(); } };
+    act.append(o, x); row.append(act);
+    box.append(row);
+  }
+}
+$('#nameField').onchange = ()=>{
+  if(!S.project) return;
+  S.project.name = $('#nameField').value.trim() || 'Untitled site';
+  $('#projname').textContent = S.project.name;
+};
+
+/* file inputs + drop */
+$('#btnOpenHtml').onclick = $('#dzHtml').onclick = ()=> $('#fHtml').click();
+$('#btnOpenProj').onclick = $('#dzProj').onclick = ()=> $('#fProj').click();
+$('#fHtml').onchange = async (e)=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(f) openHtml(await f.text(), f.name.replace(/\.html?$/i,''));
+};
+$('#fProj').onchange = async (e)=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f) return;
+  try{ openProjectData(JSON.parse(await f.text())); }
+  catch(err){ fail('That .json is not readable', err); }
+};
+const dz = $('#dropzone');
+['dragenter','dragover'].forEach(ev=> addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('drag'); dz.style.display='grid'; }));
+['dragleave','drop'].forEach(ev=> addEventListener(ev, e=>{ e.preventDefault(); dz.classList.remove('drag'); if(ev==='dragleave' && S.project) dz.style.display='none'; }));
+addEventListener('drop', async (e)=>{
+  const f = e.dataTransfer.files[0];
+  if(!f){ if(S.project) dz.style.display='none'; return; }
+  if(/\.json$/i.test(f.name)){ try{ openProjectData(JSON.parse(await f.text())); }catch(err){ fail('That .json is not readable', err); } }
+  else if(/\.html?$/i.test(f.name)) openHtml(await f.text(), f.name.replace(/\.html?$/i,''));
+  else { fail('Drop an .html file or a .json project — ' + f.name + ' is neither'); if(S.project) dz.style.display='none'; }
+});
+
+/* ==========================================================================
+   15. Logo palette.
+   ========================================================================== */
+$('#btnLogo').onclick = ()=> $('#fLogo').click();
+$('#fLogo').onchange = async (e)=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f) return;
+  try{
+    const img = await loadBitmap(f);
+    const n = 96, cv = document.createElement('canvas');
+    cv.width = n; cv.height = n;
+    const cx = cv.getContext('2d', {willReadFrequently:true});
+    cx.drawImage(img, 0, 0, n, n);
+    const d = cx.getImageData(0,0,n,n).data;
+    const buckets = new Map();
+    for(let i=0;i<d.length;i+=4){
+      if(d[i+3] < 128) continue;
+      const hex = C.hex(d[i], d[i+1], d[i+2]);
+      const hsl = C.toHsl(hex);
+      if(hsl.l > 0.94 || hsl.l < 0.05) continue;      // paper and ink are not brand colors
+      const q = C.hex(d[i] & 0xF0, d[i+1] & 0xF0, d[i+2] & 0xF0);
+      const b = buckets.get(q) || {sum:[0,0,0], n:0};
+      b.sum[0]+=d[i]; b.sum[1]+=d[i+1]; b.sum[2]+=d[i+2]; b.n++;
+      buckets.set(q, b);
+    }
+    const pal = [...buckets.values()]
+      .map(b=>({hex:C.hex(b.sum[0]/b.n, b.sum[1]/b.n, b.sum[2]/b.n), n:b.n}))
+      .map(p=>({...p, s:C.toHsl(p.hex).s}))
+      .sort((a,b)=> (b.n*(0.35+b.s)) - (a.n*(0.35+a.s)))
+      .slice(0,6);
+    if(!pal.length) throw new Error('no usable colors — it may be all white or fully transparent');
+    S.palette = pal;
+    const out = $('#palOut'); out.innerHTML='';
+    for(const p of pal){ const i=el('i'); i.style.background=p.hex; i.title=p.hex; out.append(i); }
+    $('#palApplyRow').style.display = 'flex';
+    log('Palette read from ' + f.name + ' — ' + pal.map(p=>p.hex).join(' '), 'ok');
+  }catch(err){ fail('Could not read a palette from ' + f.name, err); }
+};
+$('#btnClearPal').onclick = ()=>{ S.palette=null; $('#palOut').innerHTML=''; $('#palApplyRow').style.display='none'; };
+$('#btnApplyPal').onclick = ()=>{
+  if(!S.palette || !S.built) return;
+  snapshot();
+  let n = 0;
+  for(const c of S.built.colors){
+    const hsl = C.toHsl(c.hex);
+    if(hsl.s < 0.10) continue;                       // greys, blacks and whites stay put
+    let best = null, bd = 1e9;
+    for(const p of S.palette){
+      const ph = C.toHsl(p.hex);
+      let d = Math.abs(((hsl.h - ph.h + 540) % 360) - 180);
+      d = 180 - d;                                   // hue distance, 0 = identical
+      if(d < bd){ bd = d; best = ph; }
+    }
+    if(!best) continue;
+    /* keep the original lightness so text stays readable on its background */
+    S.project.colors[c.hex] = C.fromHsl(best.h, Math.max(best.s, hsl.s*0.6), hsl.l);
+    n++;
+  }
+  log('Recolored ' + n + ' color families onto the logo palette, keeping each one\u2019s lightness', 'ok');
+  rebuild(true);
+};
+
+/* ==========================================================================
+   16. Chrome: tabs, viewport, find, keys.
+   ========================================================================== */
+function setTab(id){
+  $$('.tab').forEach(t=> t.setAttribute('aria-selected', String(t.dataset.pane===id)));
+  $$('.pane').forEach(p=> p.classList.toggle('on', p.id===id));
+}
+$$('.tab').forEach(t=> t.onclick = ()=> setTab(t.dataset.pane));
+$('#sidetoggle').onclick = ()=> document.body.classList.toggle('side-open');
+
+function setViewport(w){
+  S.vp = w;
+  document.documentElement.style.setProperty('--barh', document.querySelector('.bar').offsetHeight + 'px');
+  const frame = $('#frame'), stage = $('#stage');
+  const avail = Math.max(280, stage.clientWidth - 24);
+  const width = w ? Math.min(w, avail) : avail;
+  frame.style.width = width + 'px';
+  $('#ruler').style.width = width + 'px';
+  $('#dimTxt').textContent = (w ? w : Math.round(avail)) + ' px' + (w && width < w ? ' (scaled to fit)' : '');
+  $('#pv').style.height = Math.max(420, stage.clientHeight - 30) + 'px';
+}
+$$('#vpSeg button').forEach(b=> b.onclick = ()=>{
+  $$('#vpSeg button').forEach(x=> x.setAttribute('aria-pressed', String(x===b)));
+  setViewport(+b.dataset.w);
+});
+addEventListener('resize', ()=> setViewport(S.vp));
+
+let findTimer;
+$('#findInput').oninput = ()=>{
+  clearTimeout(findTimer);
+  findTimer = setTimeout(()=> sendPv({t:'find', q:$('#findInput').value}), 180);
+};
+$('#findInput').onkeydown = (e)=>{
+  if(e.key==='Enter'){ e.preventDefault(); sendPv({t:'findStep', d: e.shiftKey ? -1 : 1}); }
+  if(e.key==='Escape'){ $('#findInput').value=''; sendPv({t:'clearFind'}); $('#findCnt').textContent=''; }
+};
+$('#findNext').onclick = ()=> sendPv({t:'findStep', d:1});
+$('#findPrev').onclick = ()=> sendPv({t:'findStep', d:-1});
+
+$('#btnUndo').onclick = undo;
+function toggleLog(){
+  const w = $('#logwrap');
+  w.classList.toggle('collapsed');
+  $('#logToggle').textContent = w.classList.contains('collapsed') ? 'show' : 'hide';
+}
+$('#loghead').onclick = toggleLog;
+
+addEventListener('keydown', (e)=>{
+  const k = e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); }
+  else if((e.ctrlKey||e.metaKey) && k==='s'){ e.preventDefault(); $('#btnSave').click(); }
+  else if((e.ctrlKey||e.metaKey) && k==='f'){ e.preventDefault(); $('#findInput').focus(); $('#findInput').select(); }
+  else if(k==='escape'){ $$('.modal.on').forEach(m=>m.classList.remove('on')); }
+});
+addEventListener('beforeunload', (e)=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
+
+/* ==========================================================================
+   17. Self-test. The fixture is deliberately nasty: CSS background image,
+       rgba overlay, fixed-height grid, inline script, embedded map,
+       caption split across nested tags, footer space before a link.
+   ========================================================================== */
+const PX = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const FIXTURE = [
+'<!DOCTYPE html>',
+'<html lang="en"><head><meta charset="utf-8"><title>Alvarez Roofing</title>',
+'<style>',
+'  :root{--brand:#2f6f4e}',
+'  body{margin:0;font-family:system-ui;color:#333}',
+'  .hero{background-image:url("' + PX + '");background-size:cover;position:relative;height:420px}',
+'  .hero::after{content:"";position:absolute;inset:0;background:rgba(47,111,78,.55)}',
+'  .grid{display:grid;grid-template-columns:repeat(3,1fr);height:300px;gap:12px}',
+'  .card{background:#fff;border:1px solid #ddd;min-height:120px}',
+'  .badge{color:#2f6f4e;border:2px solid #2f6f4eaa}',
+'  .cta{background:#f60;color:#fff}',
+'  .quiet{color:#abc}',
+'</style></head>',
+'<body>',
+'  <header class="hero"><h1>Roofing you can forget about</h1></header>',
+'  <section class="grid">',
+'    <div class="card" style="background-image:url(' + PX + ');background-size:cover"><p>Storm damage repair, same week.</p></div>',
+'    <div class="card"><img src="' + PX + '" alt="Crew on a ridge"></div>',
+'    <div class="card"><span class="cap"><b class="badge">Alvarez</b> Roofing &amp; Gutters</span></div>',
+'  </section>',
+'  <section><p>Open 7am to 5pm, Monday through Saturday.</p></section>',
+'  <iframe title="map" src="https://www.google.com/maps/embed?pb=!1m18" width="600" height="300"></iframe>',
+'  <footer><p>Created by <a href="https://example.com">Rivera Web</a></p></footer>',
+'  <script>function vseMobileMenu(){document.body.classList.toggle("open")}<\/script>',
+'</body></html>'
+].join('\n');
+
+function runTests(){
+  const results = [];
+  const T = (name, fn)=>{
+    try{ const d = fn(); results.push({name, pass:d !== false, detail: typeof d === 'string' ? d : ''}); }
+    catch(e){ results.push({name, pass:false, detail:String(e.message||e)}); }
+  };
+  const savedAssets = S.assets;
+  S.assets = Object.create(null);
+  try{
+    const P = ()=>{
+      const p = newProject(FIXTURE, 'fixture');
+      indexSource(p);
+      return p;
+    };
+
+    T('SHA-1 matches the reference vector for "abc"', ()=>{
+      const h = U.sha1(U.utf8('abc'));
+      if(h !== 'a9993e364706816aba3e25717850c26c9cd0d89d') throw new Error(h);
+      return h.slice(0,16) + '…';
+    });
+    T('CRC-32 matches the reference vector', ()=>{
+      const c = U.crc32(U.utf8('123456789'));
+      if(c !== 0xCBF43926) throw new Error('0x'+c.toString(16));
+      return '0xcbf43926';
+    });
+    T('Zip writer emits valid local, central and end records', ()=>{
+      const z = U.zip([{name:'a.txt', data:U.utf8('hello')}, {name:'images/b.bin', data:new Uint8Array([1,2,3])}]);
+      const dv = new DataView(z.buffer);
+      if(dv.getUint32(0, true) !== 0x04034b50) throw new Error('bad local header');
+      if(dv.getUint32(z.length-22, true) !== 0x06054b50) throw new Error('bad end record');
+      if(dv.getUint16(z.length-22+8, true) !== 2) throw new Error('wrong entry count');
+      const twice = U.zip([{name:'a.txt', data:U.utf8('hello')}, {name:'images/b.bin', data:new Uint8Array([1,2,3])}]);
+      if(String(z) !== String(twice)) throw new Error('zip bytes not stable across runs');
+      return z.length + ' bytes, stored mode, fixed timestamps';
+    });
+    T('Finds images in <img>, inline style and <style> alike', ()=>{
+      const r = build(P(), S.assets, 'preview');
+      const kinds = r.slots.map(s=>s.kind);
+      for(const k of ['img','bg','css']) if(!kinds.includes(k)) throw new Error('missed ' + k);
+      return r.slots.length + ' slots: ' + kinds.join(', ');
+    });
+    T('Lists page colors ranked by how often they appear', ()=>{
+      const r = build(P(), S.assets, 'preview');
+      const keys = r.colors.map(c=>c.hex);
+      for(const k of ['#2f6f4e','#ffffff','#aabbcc','#ff6600']) if(!keys.includes(k)) throw new Error('missed ' + k);
+      if(r.colors[0].count < r.colors[r.colors.length-1].count) throw new Error('not ranked');
+      return r.colors.slice(0,4).map(c=>c.hex+'×'+c.count).join('  ');
+    });
+    T('Recoloring keeps the alpha in rgba() overlays', ()=>{
+      const p = P(); p.colors['#2f6f4e'] = '#1a4a8f';
+      const html = build(p, S.assets, 'preview').html;
+      if(!/rgba\(26, 74, 143, \.55\)/.test(html)) throw new Error('alpha lost: ' + (html.match(/rgba\([^)]*\)/)||[])[0]);
+      return 'rgba(26, 74, 143, .55)';
+    });
+    T('Recoloring keeps 8-digit hex alpha and shorthand notation', ()=>{
+      const p = P(); p.colors['#2f6f4e'] = '#1a4a8f'; p.colors['#aabbcc'] = '#ddeeff';
+      const html = build(p, S.assets, 'preview').html;
+      if(!/#1a4a8faa/.test(html)) throw new Error('8-digit alpha lost');
+      if(!/#def\b/.test(html)) throw new Error('shorthand not preserved: ' + (html.match(/color:#[0-9a-f]+/g)||[]).join());
+      return '#1a4a8faa and #def';
+    });
+    T('Building twice produces byte-identical output', ()=>{
+      const p = P();
+      p.edits['1.1.2.0'] = 'changed';
+      p.colors['#ff6600'] = '#0055aa';
+      const a = build(p, S.assets, 'folder'), b = build(p, S.assets, 'folder');
+      if(a.html !== b.html) throw new Error('html differs');
+      if([...a.files.keys()].join() !== [...b.files.keys()].join()) throw new Error('file list differs');
+      return a.html.length + ' bytes both times';
+    });
+    T('Whitespace before a link survives a text edit', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      let target = null;
+      for(const el of doc.querySelectorAll('footer p')) target = el;
+      const path = pathOf(target);
+      p.edits[path] = 'Built by <a href="https://example.com">Rivera Web</a>';
+      const html = build(p, S.assets, 'preview').html;
+      if(!/Built by <a /.test(html)) throw new Error('space before the link was eaten');
+      return 'Built by <a …> — space intact';
+    });
+    T('Editing a caption keeps the accent tag inside it', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const cap = doc.querySelector('.cap');
+      p.edits[pathOf(cap)] = '<b class="badge">Alvarez</b> Roofing, Siding &amp; Gutters';
+      const html = build(p, S.assets, 'preview').html;
+      if(!/<b class="badge">Alvarez<\/b> Roofing, Siding/.test(html)) throw new Error('inner tag lost');
+      return 'accent <b class="badge"> preserved';
+    });
+    T('The page\u2019s own script and embedded map are left alone', ()=>{
+      const p = P();
+      p.colors['#2f6f4e'] = '#1a4a8f';
+      p.edits['1.1.2.0'] = 'x';
+      const html = build(p, S.assets, 'folder').html;
+      if(!/function vseMobileMenu\(\)/.test(html)) throw new Error('inline script was rewritten');
+      if(!/maps\/embed\?pb=!1m18/.test(html)) throw new Error('map iframe was rewritten');
+      if(!/height:300px/.test(html)) throw new Error('fixed-height grid was altered');
+      if(/min-height:0/.test(html)) throw new Error('editor CSS leaked into the export');
+      return 'script, map and grid untouched; no editor CSS in the output';
+    });
+    T('Saved paths still resolve after a save/reopen round trip', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      p.edits[pathOf(doc.querySelector('.cap'))] = 'A';
+      p.edits[pathOf(doc.querySelector('h1'))] = 'B';
+      p.images['img:' + pathOf(doc.querySelector('img'))] = {hidden:true};
+      const round = JSON.parse(JSON.stringify(p));
+      indexSource(round);
+      const r = build(round, S.assets, 'preview');
+      if(r.problems.length) throw new Error(r.problems.map(x=>x.msg).join('; '));
+      return Object.keys(round.edits).length + ' text paths and 1 image slot resolved';
+    });
+    T('Missing references are reported instead of silently skipped', ()=>{
+      const p = P();
+      p.edits['9.9.9'] = 'nope';
+      p.images['img:8.8'] = {hidden:true};
+      const r = build(p, S.assets, 'preview');
+      if(r.problems.length !== 2) throw new Error('expected 2 problems, got ' + r.problems.length);
+      return r.problems.map(x=>x.ref).join(' and ') + ' reported';
+    });
+    T('Export names images by content hash and deduplicates', ()=>{
+      const p = P();
+      const a = finishAsset('image/jpeg', U.utf8('PHOTO-ONE'), 'roof.jpg', 800, 600, '');
+      const slots = build(p, S.assets, 'preview').slots;
+      const imgSlot = slots.find(s=>s.kind==='img'), bgSlot = slots.find(s=>s.kind==='bg');
+      p.images[imgSlot.key] = {hash:a.hash, alt:'New roof'};
+      p.images[bgSlot.key]  = {hash:a.hash};
+      const r1 = build(p, S.assets, 'folder');
+      if(r1.files.size !== 2) throw new Error('expected 2 files (1 shared photo + 1 embedded pixel), got ' + r1.files.size);
+      const nameA = [...r1.files.keys()].find(n=>n.includes(a.hash.slice(0,12)));
+      if(!nameA) throw new Error('photo not named by hash');
+      /* add another image elsewhere; the first must keep its filename */
+      const b = finishAsset('image/jpeg', U.utf8('PHOTO-TWO'), 'crew.jpg', 800, 600, '');
+      p.images[slots.find(s=>s.kind==='css').key] = {hash:b.hash};
+      const r2 = build(p, S.assets, 'folder');
+      if(![...r2.files.keys()].includes(nameA)) throw new Error('filename changed when another image was added');
+      if(!/images\/[0-9a-f]{12}\.jpg/.test(r2.html)) throw new Error('CSS url() was not repointed at images/');
+      if(!new RegExp('src="' + nameA + '"').test(r2.html)) throw new Error('<img src> was not repointed');
+      return nameA + ' stayed put; one file for two slots';
+    });
+    T('Replacing an image rewrites its alt text and drops stale srcset', ()=>{
+      const p = P();
+      const a = finishAsset('image/jpeg', U.utf8('PHOTO-ONE'), 'roof.jpg', 800, 600, '');
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {hash:a.hash, alt:'New standing seam roof'};
+      const html = build(p, S.assets, 'single').html;
+      if(/Crew on a ridge/.test(html)) throw new Error('old alt text left behind');
+      if(!/alt="New standing seam roof"/.test(html)) throw new Error('new alt missing');
+      return 'alt="New standing seam roof"';
+    });
+    T('Hiding an image removes it without touching the rest', ()=>{
+      const p = P();
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {hidden:true};
+      const html = build(p, S.assets, 'preview').html;
+      if(!/display:none/.test(html)) throw new Error('not hidden');
+      return 'display:none applied inline';
+    });
+    T('One-word change alters exactly one word in the output', ()=>{
+      const p = P();
+      const before = build(p, S.assets, 'single').html;
+      const doc = Model.parse(p.originalHtml);
+      const para = [...doc.querySelectorAll('p')].find(x=>/Open 7am/.test(x.textContent));
+      p.edits[pathOf(para)] = 'Open 7am to 6pm, Monday through Saturday.';
+      const after = build(p, S.assets, 'single').html;
+      const d1 = before.split('\n'), d2 = after.split('\n');
+      const changed = d1.filter((l,i)=> l !== d2[i]).length;
+      if(d1.length !== d2.length) throw new Error('line count changed');
+      if(changed !== 1) throw new Error(changed + ' lines changed');
+      return 'exactly 1 line differs';
+    });
+    T('Closing script tags are escaped before going into a script block', ()=>{
+      const out = U.embedInScript('{"html":"<p>hi</' + 'script><b>x</b>"}');
+      if(/<\/script>/.test(out)) throw new Error('literal closing tag survived');
+      if(!/<\\\/script>/.test(out)) throw new Error('not escaped as expected');
+      return out.slice(0,40) + '…';
+    });
+    T('Injected preview CSS cannot outrank the page\u2019s own rules', ()=>{
+      const pageRules = AGENT_CSS.split('\n').filter(l=>/^\s*[:\[a-z]/i.test(l) && l.includes('{'));
+      const bad = pageRules.filter(l=> !/^\s*:where\(/.test(l) && !/^\s*\[data-vse/.test(l));
+      if(bad.length) throw new Error('unscoped rule: ' + bad[0].trim().slice(0,40));
+      return pageRules.filter(l=>/:where/.test(l)).length + ' rules wrapped in :where(), the rest scoped to [data-vse]';
+    });
+    T('Preview injection survives a page that closes a script tag', ()=>{
+      const html = previewHtml(FIXTURE, {note:'</' + 'script>'});
+      if(html.indexOf('vseMobileMenu') < 0) throw new Error('page script lost');
+      if(html.indexOf('window.__VSE=') < 0) throw new Error('agent config missing');
+      if(html.lastIndexOf('data-vse') > html.indexOf('</body>')) throw new Error('agent not injected before the end of the body');
+      return 'agent injected at the end of <body>';
+    });
+  } finally {
+    S.assets = savedAssets;
+  }
+  return results;
+}
+
+function showTests(){
+  const rows = $('#testRows'); rows.innerHTML = '';
+  let results;
+  try{ results = runTests(); }
+  catch(e){ fail('Self-test crashed', e); return; }
+  let pass = 0;
+  for(const r of results){
+    if(r.pass) pass++;
+    const tr = el('tr');
+    const c1 = el('td', r.pass ? 'p' : 'f', r.pass ? '✓' : '✕');
+    const c2 = el('td');
+    c2.append(el('div', null, r.name));
+    if(r.detail) c2.append(el('div','sub', r.detail)).lastChild.style.cssText = 'font:11px/1.4 var(--mono);color:var(--ink-3)';
+    tr.append(c1, c2);
+    rows.append(tr);
+  }
+  const chip = $('#testChip');
+  chip.className = 'chip ' + (pass===results.length ? 'ok' : 'bad');
+  chip.lastElementChild.textContent = pass + ' of ' + results.length + ' passing';
+  $('#mTests').classList.add('on');
+  log('Self-test: ' + pass + ' of ' + results.length + ' checks passed', pass===results.length ? 'ok' : 'err');
+}
+$('#btnTests').onclick = showTests;
+$('#btnRerun').onclick = showTests;
+$('#dzDemo').onclick = ()=> openHtml(FIXTURE, 'Test page');
+
+/* ==========================================================================
+   18. Boot.
+   ========================================================================== */
+(async function boot(){
+  setViewport(0);
+  await Store.init();
+  const chip = $('#storeChip');
+  const label = {idb:'IndexedDB', local:'localStorage · ~5 MB cap', memory:'memory only · a refresh loses it'}[Store.mode];
+  chip.className = 'chip ' + ({idb:'ok', local:'warn', memory:'bad'}[Store.mode]);
+  $('#storeTxt').textContent = label;
+  chip.title = Store.note;
+  log('Storage: ' + label + '. ' + Store.note, Store.mode==='idb' ? 'ok' : Store.mode==='local' ? 'warn' : 'err');
+  await renderLib();
+  requestAnimationFrame(()=> setViewport(S.vp));
+  log('Ready. Open a client\u2019s index.html, or load the test page to see how it handles the awkward cases.');
+})();
+</script>
+</body>
+</html>

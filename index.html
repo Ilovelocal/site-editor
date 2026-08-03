@@ -351,7 +351,8 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
         <button class="btn" id="mImgReset">Put the original back</button></div>
       <div class="hr"></div>
       <div class="lbl">Alt text <span style="text-transform:none;letter-spacing:0">— describes the picture for search engines and screen readers</span></div>
-      <div class="row"><input class="field" id="mImgAlt" placeholder="e.g. New asphalt shingle roof in Dapitan"></div>
+      <div class="row"><input class="field" id="mImgAlt" placeholder="Describe the picture in a few words"></div>
+      <div class="hint" id="mImgAltNote" style="margin:4px 0 0"></div>
       <div class="hr"></div>
       <div class="lbl">Already used on this page</div>
       <div class="grid" id="mImgGrid"></div>
@@ -790,7 +791,7 @@ function build(project, assets, mode){
   const resolveSlot = (slot)=>{
     const ov = project.images[slot.key];
     if(ov && ov.hidden) return {hidden:true};
-    if(ov && ov.hash) { const r = emit(ov.hash); return r ? {url:r, alt:ov.alt, hash:ov.hash} : {}; }
+    if(ov && ov.hash) { const r = emit(ov.hash); return r ? {url:r, hash:ov.hash} : {}; }
     const h = project.srcIndex && project.srcIndex[slot.src];
     if(h){ const r = emit(h); if(r) return {url:r, hash:h}; }
     return {};                    // leave the original reference untouched
@@ -798,6 +799,7 @@ function build(project, assets, mode){
 
   const cssPatch = new Map();     // styleIdx -> Map(urlIdx -> replacement|null)
   for(const slot of slots){
+    const ov = project.images[slot.key];
     const res = resolveSlot(slot);
     slot.effective = res.url || (res.hidden ? null : slot.src);
     slot.hidden = !!res.hidden;
@@ -806,13 +808,20 @@ function build(project, assets, mode){
         slot.el.setAttribute('style', ((slot.el.getAttribute('style')||'').replace(/;\s*$/,'') + ';display:none').replace(/^;/,''));
       }else if(res.url){
         slot.el.setAttribute('src', res.url);
-        if(res.alt !== undefined && res.alt !== null) slot.el.setAttribute('alt', res.alt);
         /* stale srcset would win over the new src, and a <picture> source
            would win over both */
         slot.el.removeAttribute('srcset'); slot.el.removeAttribute('sizes');
         slot.el.removeAttribute('data-src'); slot.el.removeAttribute('loading');
         const pic = slot.el.parentElement;
         if(pic && pic.tagName === 'PICTURE') [...pic.querySelectorAll('source')].forEach(s=>s.remove());
+      }
+      /* Alt text belongs to the slot, not to the file that happens to sit in
+         it: it can be corrected on an image you never replaced, and it must
+         not be left stale on one you did. An empty string is a real answer —
+         it marks the image decorative — so only an absent alt means "leave
+         the page's own wording alone". */
+      if(!res.hidden && ov && ov.alt !== undefined && ov.alt !== null){
+        slot.el.setAttribute('alt', ov.alt);
       }
     }else if(slot.kind === 'bg'){
       if(res.hidden || res.url){
@@ -1377,7 +1386,7 @@ function renderImages(r){
     const meta = el('div','meta');
     meta.append(el('div','nm', slot.label));
     const sub = el('div','sub');
-    sub.textContent = ov ? (ov.hidden ? 'hidden' : 'replaced · ' + ov.hash.slice(0,8)) : (slot.src.startsWith('data:') ? 'embedded ' + slot.src.slice(5, slot.src.indexOf(';')) : slot.src.slice(0,44));
+    sub.textContent = ov ? (ov.hidden ? 'hidden' : ov.hash ? 'replaced · ' + ov.hash.slice(0,8) : 'alt text changed') : (slot.src.startsWith('data:') ? 'embedded ' + slot.src.slice(5, slot.src.indexOf(';')) : slot.src.slice(0,44));
     meta.append(sub);
     row.append(meta);
     const act = el('div','row');
@@ -1515,6 +1524,12 @@ function openPicker(slot){
   $('#mImgTitle').textContent = 'Change image — ' + slot.label;
   $('#mImgAlt').value = ov && ov.alt != null ? ov.alt : (slot.kind==='img' ? (slot.alt||'') : '');
   $('#mImgAlt').disabled = slot.kind !== 'img';
+  $('#mImgAlt').placeholder = slot.kind === 'img'
+    ? 'Describe the picture in a few words'
+    : 'Background images have no alt text';
+  $('#mImgAltNote').textContent = slot.kind !== 'img' ? ''
+    : (ov && ov.alt != null ? 'Changed from: ' + (slot.alt ? '“' + slot.alt + '”' : 'nothing')
+                            : (slot.alt ? 'This is the page’s own wording.' : 'This image has no alt text yet.'));
   $('#mImgInfo').textContent = slot.hidden ? 'Currently hidden.' :
     (slot.effective||'').startsWith('data:') ? 'Currently an embedded image.' : 'Currently ' + (slot.effective||'—').slice(0,70);
   const grid = $('#mImgGrid'); grid.innerHTML = '';
@@ -1566,13 +1581,24 @@ $('#mImgReset').onclick = ()=>{
   const k = S.pickKey; rebuild(true);
   openPicker((S.built.slots||[]).find(s=>s.key===k));
 };
-$('#mImgAlt').onchange = ()=>{
-  const ov = S.project.images[S.pickKey];
-  if(!ov || ov.hidden) return;
-  snapshot(); ov.alt = $('#mImgAlt').value;
-  log('Alt text updated at ' + S.pickKey);
-  rebuild(true);
-};
+function commitAlt(){
+  const key = S.pickKey; if(!key) return;
+  const slot = (S.built.slots||[]).find(s=>s.key===key);
+  if(!slot || slot.kind !== 'img') return;
+  const ov = S.project.images[key];
+  if(ov && ov.hidden) return;
+  const val = $('#mImgAlt').value;
+  const current = ov && ov.alt != null ? ov.alt : (slot.alt || '');
+  if(val === current) return;
+  snapshot();
+  if(ov) ov.alt = val; else S.project.images[key] = {alt:val};
+  log('Alt text at ' + key + ' set to ' + (val ? '“' + val + '”' : 'empty, which marks it decorative'), 'ok');
+  rebuild(false);
+  const again = (S.built.slots||[]).find(s=>s.key===key);
+  $('#mImgAltNote').textContent = 'Changed from: ' + (again && again.alt ? '“' + again.alt + '”' : 'nothing');
+}
+$('#mImgAlt').onchange = commitAlt;
+$('#mImgAlt').onkeydown = (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); commitAlt(); } };
 $$('[data-close]').forEach(b=> b.onclick = ()=> b.closest('.modal').classList.remove('on'));
 $$('.modal').forEach(m=> m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('on'); }));
 
@@ -2001,6 +2027,37 @@ function runTests(){
       if(/Crew on a ridge/.test(html)) throw new Error('old alt text left behind');
       if(!/alt="New standing seam roof"/.test(html)) throw new Error('new alt missing');
       return 'alt="New standing seam roof"';
+    });
+    T('Alt text can be corrected without replacing the image', ()=>{
+      const p = P();
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {alt:'Crew replacing a ridge cap'};      // no hash: alt only
+      const r = build(p, S.assets, 'single');
+      if(r.problems.length) throw new Error(r.problems[0].msg);
+      if(/Crew on a ridge/.test(r.html)) throw new Error('old alt text survived');
+      if(!/alt="Crew replacing a ridge cap"/.test(r.html)) throw new Error('new alt missing');
+      if(!/src="data:image\/gif/.test(r.html)) throw new Error('the photo itself was disturbed');
+      return 'alt changed, image left alone';
+    });
+    T('An empty alt is kept, because that marks an image decorative', ()=>{
+      const p = P();
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {alt:''};
+      const html = build(p, S.assets, 'single').html;
+      if(!/alt=""/.test(html)) throw new Error('empty alt was thrown away');
+      if(/Crew on a ridge/.test(html)) throw new Error('old alt text survived');
+      return 'alt="" written out';
+    });
+    T('Alt survives a replacement and a save/reopen round trip', ()=>{
+      const p = P();
+      const a = finishAsset('image/jpeg', U.utf8('PHOTO-ONE'), 'ridge-cap-repair.jpg', 800, 600, '');
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {hash:a.hash, alt:'Ridge cap repair after a storm'};
+      const round = JSON.parse(JSON.stringify(p));
+      indexSource(round);
+      const html = build(round, S.assets, 'single').html;
+      if(!/alt="Ridge cap repair after a storm"/.test(html)) throw new Error('alt lost in the round trip');
+      return 'alt intact after save and reopen';
     });
     T('Hiding an image removes it without touching the rest', ()=>{
       const p = P();

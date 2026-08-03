@@ -244,6 +244,9 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" aria-selected="true" data-pane="p-images">Images <span class="n" id="tImages">0</span></button>
         <button class="tab" role="tab" aria-selected="false" data-pane="p-colors">Colors <span class="n" id="tColors">0</span></button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-el">Element</button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-seo">SEO <span class="n" id="tSeo"></span></button>
+        <button class="tab" role="tab" aria-selected="false" data-pane="p-form">Form</button>
         <button class="tab" role="tab" aria-selected="false" data-pane="p-lib">Clients <span class="n" id="tLib">0</span></button>
         <button class="tab" role="tab" aria-selected="false" data-pane="p-info">Info</button>
       </div>
@@ -267,6 +270,60 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <div class="row" id="palApplyRow" style="display:none">
             <button class="btn primary" id="btnApplyPal">Recolor page to match</button>
             <button class="btn" id="btnClearPal">Clear</button>
+          </div>
+        </section>
+
+        <section class="pane" id="p-el">
+          <div class="lbl">Selected element</div>
+          <div id="elBody"><div class="empty">Click anything in the preview.</div></div>
+        </section>
+
+        <section class="pane" id="p-seo">
+          <div class="lbl">Search result</div>
+          <div id="serp" class="note" style="border-left-color:var(--marking)"></div>
+          <div class="lbl" style="margin-top:10px">Page title <span id="cTitle" class="cnt"></span></div>
+          <input class="field" id="seoTitle" placeholder="Alvarez Roofing — storm damage repair">
+          <div class="lbl" style="margin-top:8px">Meta description <span id="cDesc" class="cnt"></span></div>
+          <textarea class="field" id="seoDesc" rows="3" placeholder="What this business does and where, in one sentence."></textarea>
+          <div class="lbl" style="margin-top:8px">Site address</div>
+          <input class="field" id="seoCanonical" placeholder="https://alvarezroofing.com">
+          <div class="row" style="margin-top:6px">
+            <select class="field" id="seoRobots">
+              <option value="">Let search engines list this page</option>
+              <option value="noindex,nofollow">Keep this page out of search</option>
+            </select>
+            <input class="field" id="seoLang" placeholder="en" style="max-width:70px">
+          </div>
+          <div class="hr"></div>
+          <div class="lbl">Sharing preview <span style="text-transform:none;letter-spacing:0">— Facebook, Messenger, WhatsApp</span></div>
+          <div class="row"><select class="field" id="seoOgImage"></select></div>
+          <div class="hr"></div>
+          <div class="lbl">Business listing <span style="text-transform:none;letter-spacing:0">— feeds the hours-and-phone box in Google</span></div>
+          <div id="bizFields"></div>
+          <div class="hr"></div>
+          <div class="lbl">Audit</div>
+          <div id="seoAudit"></div>
+        </section>
+
+        <section class="pane" id="p-form">
+          <div class="lbl">Contact form</div>
+          <p class="hint">Rewrites this page's <code>&lt;form&gt;</code> to post to a Cloudflare Pages Function that emails the owner. No third party, no database.</p>
+          <label class="row"><input type="checkbox" id="fmEnabled"> <span>Wire up the contact form on export</span></label>
+          <div id="fmBody" style="display:none">
+            <div class="lbl" style="margin-top:10px">Send enquiries to</div>
+            <input class="field" id="fmTo" placeholder="owner@alvarezroofing.com">
+            <div class="lbl" style="margin-top:8px">Send them from</div>
+            <input class="field" id="fmFrom" placeholder="forms@alvarezroofing.com">
+            <div class="lbl" style="margin-top:8px">Subject line</div>
+            <input class="field" id="fmSubject" placeholder="Website enquiry">
+            <div class="lbl" style="margin-top:8px">Message shown after sending</div>
+            <input class="field" id="fmSuccess">
+            <div class="hr"></div>
+            <label class="row"><input type="checkbox" id="fmTurnstile"> <span>Add a Turnstile bot check</span></label>
+            <p class="hint">A hidden honeypot field is always included and needs no setup. Turn this on only if real spam starts arriving — it loads a script from Cloudflare.</p>
+            <input class="field" id="fmSiteKey" placeholder="Turnstile site key" style="display:none">
+            <div class="hr"></div>
+            <div id="fmStatus"></div>
           </div>
         </section>
 
@@ -353,6 +410,8 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
       <div class="lbl">Alt text <span style="text-transform:none;letter-spacing:0">— describes the picture for search engines and screen readers</span></div>
       <div class="row"><input class="field" id="mImgAlt" placeholder="Describe the picture in a few words"></div>
       <div class="hint" id="mImgAltNote" style="margin:4px 0 0"></div>
+      <div class="lbl" style="margin-top:8px">Exported filename <span style="text-transform:none;letter-spacing:0">— a content hash is added automatically</span></div>
+      <div class="row"><input class="field" id="mImgFile" placeholder="standing-seam-roof"></div>
       <div class="hr"></div>
       <div class="lbl">Already used on this page</div>
       <div class="grid" id="mImgGrid"></div>
@@ -449,6 +508,15 @@ U.extFor = function(mime){
   return ({'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/gif':'gif',
            'image/svg+xml':'svg','image/webp':'webp','image/avif':'avif','image/x-icon':'ico',
            'image/vnd.microsoft.icon':'ico','image/bmp':'bmp'})[String(mime).toLowerCase()] || 'bin';
+};
+
+/* A filename-safe slug. Lives on the image, not on the slot, so editing alt
+   text never renames an exported file. */
+U.slug = function(str, fallback){
+  const out = String(str||'').toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48).replace(/-+$/,'');
+  return out || (fallback || 'image');
 };
 
 U.fmtBytes = function(n){
@@ -632,6 +700,37 @@ C.fromHsl = function(h,s,l){
   return C.hex(Math.round((r+m)*255),Math.round((g+m)*255),Math.round((b+m)*255));
 };
 
+/* Split a style attribute into declarations without breaking url(data:...;base64,)
+   which contains semicolons of its own. */
+function cssDecls(style){
+  const out = []; let buf = '', depth = 0;
+  for(const ch of String(style||'')){
+    if(ch === '(') depth++;
+    else if(ch === ')') depth--;
+    if(ch === ';' && depth === 0){ if(buf.trim()) out.push(buf.trim()); buf = ''; }
+    else buf += ch;
+  }
+  if(buf.trim()) out.push(buf.trim());
+  return out;
+}
+function cssSet(style, prop, val){
+  const key = String(prop).toLowerCase();
+  const kept = cssDecls(style).filter(d=>{
+    const i = d.indexOf(':');
+    return i < 0 || d.slice(0,i).trim().toLowerCase() !== key;
+  });
+  if(val !== '' && val != null) kept.push(prop + ':' + val);
+  return kept.join(';');
+}
+function cssGet(style, prop){
+  const key = String(prop).toLowerCase();
+  for(const d of cssDecls(style)){
+    const i = d.indexOf(':');
+    if(i > 0 && d.slice(0,i).trim().toLowerCase() === key) return d.slice(i+1).trim();
+  }
+  return '';
+}
+
 /* ==========================================================================
    2. Element addressing.
       A path is the chain of child-element indexes from <html>, e.g. "1.3.0".
@@ -750,6 +849,361 @@ Model.isTextBlock = function(el){
 };
 
 /* ==========================================================================
+   3b. Head / SEO. Applied last, after every path-based operation, so that
+       injecting tags into <head> can never shift an element path.
+   ========================================================================== */
+function setMeta(doc, attr, key, content){
+  if(content == null || content === '') return null;
+  let el = doc.head.querySelector('meta[' + attr + '="' + key + '"]');
+  if(!el){ el = doc.createElement('meta'); el.setAttribute(attr, key); doc.head.appendChild(el); }
+  el.setAttribute('content', content);
+  return el;
+}
+function applyHead(doc, head, imageUrl, problems){
+  if(!head) return;
+  if(head.lang) doc.documentElement.setAttribute('lang', head.lang);
+  if(head.title){
+    let t = doc.head.querySelector('title');
+    if(!t){ t = doc.createElement('title'); doc.head.insertBefore(t, doc.head.firstChild); }
+    t.textContent = head.title;
+  }
+  setMeta(doc, 'name', 'description', head.description);
+  setMeta(doc, 'name', 'robots', head.robots);
+  if(head.canonical){
+    let l = doc.head.querySelector('link[rel="canonical"]');
+    if(!l){ l = doc.createElement('link'); l.setAttribute('rel','canonical'); doc.head.appendChild(l); }
+    l.setAttribute('href', head.canonical);
+  }
+  /* Open Graph falls back to the page title and description rather than
+     making you type everything twice. */
+  const ogT = head.ogTitle || head.title, ogD = head.ogDescription || head.description;
+  setMeta(doc, 'property', 'og:title', ogT);
+  setMeta(doc, 'property', 'og:description', ogD);
+  setMeta(doc, 'property', 'og:type', ogT ? 'website' : '');
+  setMeta(doc, 'property', 'og:url', head.canonical);
+  setMeta(doc, 'property', 'og:image', imageUrl);
+  setMeta(doc, 'name', 'twitter:card', (ogT && head.twitterCard) || '');
+
+  const b = head.biz || {};
+  if(b.name){
+    const ld = {'@context':'https://schema.org', '@type':'LocalBusiness', name:b.name};
+    if(head.canonical) ld.url = head.canonical;
+    if(b.phone) ld.telephone = b.phone;
+    if(b.email) ld.email = b.email;
+    if(b.priceRange) ld.priceRange = b.priceRange;
+    if(imageUrl && !/^data:/.test(imageUrl)) ld.image = imageUrl;
+    if(b.street || b.city || b.region || b.postal || b.country){
+      ld.address = {'@type':'PostalAddress'};
+      if(b.street) ld.address.streetAddress = b.street;
+      if(b.city) ld.address.addressLocality = b.city;
+      if(b.region) ld.address.addressRegion = b.region;
+      if(b.postal) ld.address.postalCode = b.postal;
+      if(b.country) ld.address.addressCountry = b.country;
+    }
+    if(b.hours) ld.openingHours = b.hours.split(/\n|;/).map(x=>x.trim()).filter(Boolean);
+    if(b.areaServed) ld.areaServed = b.areaServed.split(',').map(x=>x.trim()).filter(Boolean);
+    if(b.sameAs) ld.sameAs = b.sameAs.split(/\n|,/).map(x=>x.trim()).filter(Boolean);
+    let sc = doc.head.querySelector('script[data-seo-block]');
+    if(!sc){ sc = doc.createElement('script'); sc.setAttribute('type','application/ld+json');
+             sc.setAttribute('data-seo-block',''); doc.head.appendChild(sc); }
+    sc.textContent = JSON.stringify(ld, null, 2);
+  }
+}
+
+/* A short audit rather than a score: only things you can act on. */
+function auditSeo(doc, head){
+  const out = [];
+  const title = (doc.querySelector('title')||{}).textContent || '';
+  const desc = (doc.querySelector('meta[name="description"]')||{getAttribute:()=>''}).getAttribute('content') || '';
+  if(!title.trim()) out.push({level:'err', msg:'No page title. This is the blue line in a search result.'});
+  else if(title.length > 60) out.push({level:'warn', msg:'Title is ' + title.length + ' characters; Google usually cuts around 60.'});
+  if(!desc.trim()) out.push({level:'err', msg:'No meta description, so Google will invent one from the page text.'});
+  else if(desc.length > 160) out.push({level:'warn', msg:'Description is ' + desc.length + ' characters; around 155 is the usual cutoff.'});
+  const h1 = doc.querySelectorAll('h1');
+  if(!h1.length) out.push({level:'warn', msg:'No <h1> on the page.'});
+  else if(h1.length > 1) out.push({level:'warn', msg:h1.length + ' <h1> headings; one is the convention.'});
+  const imgs = [...doc.querySelectorAll('img')];
+  const noAlt = imgs.filter(i=>!(i.getAttribute('alt')||'').trim() && i.getAttribute('alt') === null);
+  if(noAlt.length) out.push({level:'warn', msg:noAlt.length + ' of ' + imgs.length + ' images have no alt text.', fix:'images'});
+  if(!doc.querySelector('meta[name="viewport"]')) out.push({level:'err', msg:'No viewport meta tag, so phones will render this at desktop width.'});
+  if(!head.canonical) out.push({level:'warn', msg:'No canonical URL set, so no sitemap or Open Graph URL can be written.'});
+  if(!(head.biz||{}).name) out.push({level:'warn', msg:'No business details, so no LocalBusiness listing is written.'});
+  return out;
+}
+
+/* ==========================================================================
+   3c. Contact form. The page posts to a Pages Function that hands the message
+       to Cloudflare Email Service. No third party, no database.
+   ========================================================================== */
+const FORM_ENHANCE = [
+  "(function(){var f=document.querySelector('form[data-contact-form]');if(!f)return;",
+  "var s=document.createElement('p');s.setAttribute('data-form-status','');s.style.cssText='margin:.75em 0';",
+  "f.appendChild(s);f.addEventListener('submit',function(e){e.preventDefault();",
+  "var b=f.querySelector('[type=submit]');if(b){b.disabled=true;}s.textContent='Sending\u2026';",
+  "fetch(f.action,{method:'POST',body:new FormData(f)}).then(function(r){return r.json();}).then(function(d){",
+  "if(d&&d.ok){f.reset();s.textContent=f.getAttribute('data-success')||'Thank you.';}",
+  "else{s.textContent=(d&&d.error)||'That did not send. Please call us instead.';}",
+  "}).catch(function(){s.textContent='That did not send. Please call us instead.';})",
+  ".then(function(){if(b){b.disabled=false;}});});})();"
+].join('');
+
+function applyForm(doc, form, problems){
+  if(!form || !form.enabled) return false;
+  const f = doc.querySelector('form');
+  if(!f){ problems.push({kind:'form', ref:'form', msg:'Contact form is switched on, but this page has no <form> element. SETUP.md includes markup you can paste in.'}); return false; }
+  f.setAttribute('data-contact-form','');
+  f.setAttribute('action', '/api/contact');
+  f.setAttribute('method', 'post');
+  f.setAttribute('data-success', form.success || 'Thank you.');
+  const fields = [...f.querySelectorAll('input,textarea,select')]
+    .filter(x=>!/^(submit|button|hidden)$/i.test(x.getAttribute('type')||''));
+  const unnamed = fields.filter(x=>!x.getAttribute('name'));
+  for(const x of unnamed){
+    const guess = U.slug(x.getAttribute('placeholder') || x.getAttribute('id') || x.type || 'field', 'field');
+    x.setAttribute('name', guess);
+    problems.push({kind:'form', ref:guess, msg:'A form field had no name attribute; it was named "' + guess + '" so its answer is not lost.'});
+  }
+  /* honeypot: hidden from people, irresistible to simple bots */
+  if(!f.querySelector('input[name="company_website"]')){
+    const hp = doc.createElement('input');
+    hp.setAttribute('type','text'); hp.setAttribute('name','company_website');
+    hp.setAttribute('tabindex','-1'); hp.setAttribute('autocomplete','off');
+    hp.setAttribute('aria-hidden','true');
+    hp.setAttribute('style','position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden');
+    f.appendChild(hp);
+  }
+  if(form.turnstile && form.siteKey){
+    if(!f.querySelector('.cf-turnstile')){
+      const d = doc.createElement('div');
+      d.setAttribute('class','cf-turnstile');
+      d.setAttribute('data-sitekey', form.siteKey);
+      f.appendChild(d);
+    }
+    if(!doc.querySelector('script[src*="challenges.cloudflare.com"]')){
+      const sc = doc.createElement('script');
+      sc.setAttribute('src','https://challenges.cloudflare.com/turnstile/v0/api.js');
+      sc.setAttribute('async',''); sc.setAttribute('defer','');
+      doc.head.appendChild(sc);
+    }
+  }
+  const enh = doc.createElement('script');
+  enh.setAttribute('data-form-script','');
+  enh.textContent = FORM_ENHANCE;
+  doc.body.appendChild(enh);
+  return true;
+}
+
+/* The Pages Function written into the export. Plain ES modules, no imports,
+   no dependencies. It reads the posted form, checks it, and hands the message
+   to Cloudflare Email Service over its REST API. */
+function contactFunction(form){
+  const L = [
+"// functions/api/contact.js",
+"// Generated by Site Editor. Receives the contact form and emails the owner",
+"// through Cloudflare Email Service. No third-party service, no database.",
+"//",
+"// Required secrets on the Pages project (Settings > Variables and secrets):",
+"//   CF_ACCOUNT_ID      your Cloudflare account ID",
+"//   CF_EMAIL_TOKEN     an API token with Send email permission",
+"//   FORM_TO            where enquiries go (a verified destination address)",
+"//   FORM_FROM          an address on a domain with Email Routing enabled",
+"// Optional:",
+"//   TURNSTILE_SECRET   set this only if the form shows a Turnstile widget",
+"",
+"const SUBJECT = " + JSON.stringify(form.subject || 'Website enquiry'),
+"const SKIP = new Set(['company_website', 'cf-turnstile-response']);",
+"",
+"function json(body, status) {",
+"  return new Response(JSON.stringify(body), {",
+"    status: status || 200,",
+"    headers: { 'content-type': 'application/json; charset=utf-8' },",
+"  });",
+"}",
+"",
+"function tidy(v) {",
+"  return String(v == null ? '' : v).replace(/[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/g, '').trim();",
+"}",
+"",
+"function looksLikeEmail(v) {",
+"  return /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(v);",
+"}",
+"",
+"async function passesBotCheck(token, secret, ip) {",
+"  if (!secret) return true;               // Turnstile not configured: skip",
+"  if (!token) return false;",
+"  const body = new FormData();",
+"  body.append('secret', secret);",
+"  body.append('response', token);",
+"  if (ip) body.append('remoteip', ip);",
+"  const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {",
+"    method: 'POST',",
+"    body,",
+"  });",
+"  const out = await r.json().catch(() => ({}));",
+"  return out.success === true;",
+"}",
+"",
+"export async function onRequestPost({ request, env }) {",
+"  let form;",
+"  try {",
+"    form = await request.formData();",
+"  } catch (e) {",
+"    return json({ ok: false, error: 'That form could not be read.' }, 400);",
+"  }",
+"",
+"  // Honeypot. A person never sees this field, so anything in it is a bot.",
+"  // Answer as though it worked, so the bot does not retry.",
+"  if (tidy(form.get('company_website'))) return json({ ok: true });",
+"",
+"  const ok = await passesBotCheck(",
+"    form.get('cf-turnstile-response'),",
+"    env.TURNSTILE_SECRET,",
+"    request.headers.get('CF-Connecting-IP')",
+"  );",
+"  if (!ok) return json({ ok: false, error: 'The bot check did not pass. Please try again.' }, 400);",
+"",
+"  const entries = [];",
+"  let replyTo = '';",
+"  let who = '';",
+"  for (const [key, value] of form.entries()) {",
+"    if (SKIP.has(key)) continue;",
+"    const v = tidy(value);",
+"    if (!v) continue;",
+"    if (!replyTo && looksLikeEmail(v)) replyTo = v;",
+"    if (!who && /name/i.test(key)) who = v;",
+"    entries.push([key, v]);",
+"  }",
+"  if (!entries.length) return json({ ok: false, error: 'The form was empty.' }, 400);",
+"",
+"  const lines = entries.map(([k, v]) => k.replace(/[-_]+/g, ' ') + ': ' + v);",
+"  lines.push('');",
+"  lines.push('Sent from the website contact form.');",
+"  lines.push('Received: ' + new Date().toUTCString());",
+"  const country = request.headers.get('CF-IPCountry');",
+"  if (country) lines.push('Visitor country: ' + country);",
+"",
+"  const missing = ['CF_ACCOUNT_ID', 'CF_EMAIL_TOKEN', 'FORM_TO', 'FORM_FROM'].filter((k) => !env[k]);",
+"  if (missing.length) {",
+"    console.error('Contact form is not configured. Missing: ' + missing.join(', '));",
+"    return json({ ok: false, error: 'The form is not set up yet. Please call us instead.' }, 500);",
+"  }",
+"",
+"  const payload = {",
+"    from: env.FORM_FROM,",
+"    to: env.FORM_TO,",
+"    subject: SUBJECT + (who ? ' from ' + who : ''),",
+"    text: lines.join('\\n'),",
+"  };",
+"  // Reply-to means the owner can just hit reply and reach the customer.",
+"  if (replyTo) payload.replyTo = replyTo;",
+"",
+"  const res = await fetch(",
+"    'https://api.cloudflare.com/client/v4/accounts/' + env.CF_ACCOUNT_ID + '/email/sending/send',",
+"    {",
+"      method: 'POST',",
+"      headers: {",
+"        Authorization: 'Bearer ' + env.CF_EMAIL_TOKEN,",
+"        'content-type': 'application/json',",
+"      },",
+"      body: JSON.stringify(payload),",
+"    }",
+"  );",
+"",
+"  if (!res.ok) {",
+"    const detail = await res.text().catch(() => '');",
+"    console.error('Email Service refused the message: ' + res.status + ' ' + detail);",
+"    return json({ ok: false, error: 'That did not send. Please call us instead.' }, 502);",
+"  }",
+"  return json({ ok: true });",
+"}",
+"",
+"export async function onRequestGet() {",
+"  return json({ ok: false, error: 'Send this form with POST.' }, 405);",
+"}",
+""
+  ];
+  return L.join('\n');
+}
+
+/* A per-client checklist with the values already filled in. */
+function setupNotes(project){
+  const f = project.form || {}, h = project.head || {};
+  const domain = (h.canonical || '').replace(/^https?:\/\//,'').replace(/\/.*$/,'') || 'yourclientdomain.com';
+  const L = [
+    '# Setup for ' + (project.name || 'this site'),
+    '',
+    'Generated by Site Editor on ' + new Date().toISOString().slice(0,10) + '.',
+    '',
+    '## 1. Deploy',
+    '',
+    'Upload this whole folder to Cloudflare Pages. `index.html` is the site,',
+    '`images/` holds the pictures and `functions/api/contact.js` is the contact form.',
+    '',
+    '## 2. Let the domain send mail (once per client, about five minutes)',
+    '',
+    '1. Cloudflare dashboard, pick **' + domain + '**, then **Email > Email Routing**, and enable it.',
+    '2. Under **Destination addresses**, add **' + (f.to || 'the owner\u2019s email address') + '** and click the link in the confirmation email.',
+    '   Sending to a verified destination is free and does not count against any quota.',
+    '',
+    '## 3. Create the API token (once ever, not once per client)',
+    '',
+    'My Profile > API Tokens > Create Token > Custom token, with **Send email** permission',
+    'on your account. Reuse the same token on every site you deploy.',
+    '',
+    '## 4. Paste the secrets into the Pages project',
+    '',
+    'Settings > Variables and secrets. Add each as a **Secret**, not a plain variable:',
+    '',
+    '| Name | Value |',
+    '| --- | --- |',
+    '| `CF_ACCOUNT_ID` | your account ID, from the dashboard sidebar |',
+    '| `CF_EMAIL_TOKEN` | the token from step 3 |',
+    '| `FORM_TO` | ' + (f.to || 'the verified address from step 2') + ' |',
+    '| `FORM_FROM` | ' + (f.from || 'forms@' + domain) + ' |'
+  ];
+  if(f.turnstile) L.push('| `TURNSTILE_SECRET` | the secret key from your Turnstile widget |');
+  L.push('');
+  L.push('Redeploy after adding them. Secrets are not picked up by an existing build.');
+  L.push('');
+  L.push('## 5. Test it');
+  L.push('');
+  L.push('Send yourself a message through the live form. If nothing arrives, open');
+  L.push('**Workers & Pages > your project > Logs** — the function writes the reason there.');
+  L.push('');
+  L.push('## Notes');
+  L.push('');
+  L.push('- `FORM_FROM` must be on a domain that has Email Routing switched on. It does not');
+  L.push('  need to be a real mailbox.');
+  L.push('- Replying to an enquiry goes to the customer, not to ' + (f.from || 'the from address') + '.');
+  L.push('- There is no database, so the email is the only copy of an enquiry.');
+  L.push('- Cloudflare Email Service was still in beta when this was generated.');
+  if(!f.turnstile){
+    L.push('');
+    L.push('## If spam starts arriving');
+    L.push('');
+    L.push('The hidden honeypot field stops ordinary bots. If real spam gets through,');
+    L.push('turn on Turnstile in the editor\u2019s Form panel, paste the site key, re-export,');
+    L.push('and add `TURNSTILE_SECRET` alongside the other secrets.');
+  }
+  L.push('');
+  L.push('## If this page has no <form> yet');
+  L.push('');
+  L.push('Paste this into the page and re-export:');
+  L.push('');
+  L.push('```html');
+  L.push('<form>');
+  L.push('  <label>Name <input type="text" name="name" required></label>');
+  L.push('  <label>Email <input type="email" name="email" required></label>');
+  L.push('  <label>Phone <input type="tel" name="phone"></label>');
+  L.push('  <label>What do you need? <textarea name="message" rows="5" required></textarea></label>');
+  L.push('  <button type="submit">Send</button>');
+  L.push('</form>');
+  L.push('```');
+  L.push('');
+  return L.join('\n');
+}
+
+/* ==========================================================================
    4. Rebuild. Pure: reads the project and the asset table, writes nothing.
       Building twice from the same state produces byte-identical output.
    ========================================================================== */
@@ -769,6 +1223,16 @@ function build(project, assets, mode){
     el.innerHTML = project.edits[path];
   }
 
+  /* 4a2. per-element style overrides ------------------------------------- */
+  for(const path of Object.keys(project.styles||{}).sort()){
+    const el = resolvePath(doc.documentElement, path);
+    if(!el){ problems.push({kind:'style', ref:path, msg:'Styled element no longer exists at '+path}); continue; }
+    const decls = project.styles[path];
+    let st = el.getAttribute('style') || '';
+    for(const prop of Object.keys(decls).sort()) st = cssSet(st, prop, decls[prop]);
+    if(st) el.setAttribute('style', st); else el.removeAttribute('style');
+  }
+
   /* 4b. images ----------------------------------------------------------- */
   const slots = Model.scanImages(doc);
   const seen = new Set(slots.map(s=>s.key));
@@ -780,7 +1244,10 @@ function build(project, assets, mode){
     const a = assets[hash];
     if(!a){ problems.push({kind:'asset', ref:hash, msg:'Image data missing for '+hash.slice(0,10)}); return null; }
     if(mode === 'folder'){
-      const name = 'images/' + hash.slice(0,12) + '.' + U.extFor(a.mime);
+      /* slug.hash.ext — the slug reads well in search results and in your own
+         folder listing, the hash is what keeps the name stable so unchanged
+         images are never re-uploaded. */
+      const name = 'images/' + U.slug(a.slug || a.name) + '.' + hash.slice(0,12) + '.' + U.extFor(a.mime);
       if(!files.has(name)) files.set(name, {name, data:U.b64ToBytes(a.b64), mime:a.mime});
       return name;
     }
@@ -865,11 +1332,51 @@ function build(project, assets, mode){
     }
   }
 
-  /* 4d. verify every stored text path still resolves ---------------------- */
+  /* 4d. contact form. Adds elements inside <form>, so it runs after every
+         path-based step above. --------------------------------------------- */
+  const formOn = applyForm(doc, project.form, problems);
+
+  /* 4e. head. Injecting into <head> would shift child indexes, so this is
+         strictly last. ----------------------------------------------------- */
+  const head = project.head || blankHead();
+  let ogImage = '';
+  if(head.ogImage){
+    const a = assets[head.ogImage];
+    if(a){
+      ogImage = (mode === 'folder')
+        ? (head.canonical ? head.canonical.replace(/\/+$/,'') + '/' : '') + 'images/' + U.slug(a.slug || a.name) + '.' + head.ogImage.slice(0,12) + '.' + U.extFor(a.mime)
+        : 'data:' + a.mime + ';base64,' + a.b64;
+      if(mode === 'folder'){
+        const nm = 'images/' + U.slug(a.slug || a.name) + '.' + head.ogImage.slice(0,12) + '.' + U.extFor(a.mime);
+        if(!files.has(nm)) files.set(nm, {name:nm, data:U.b64ToBytes(a.b64), mime:a.mime});
+      }
+    }else problems.push({kind:'seo', ref:head.ogImage, msg:'The sharing image is missing from this project.'});
+  }
+  applyHead(doc, head, ogImage, problems);
+
+  /* 4f. companion files for the folder export ---------------------------- */
+  const extras = new Map();
+  if(mode === 'folder'){
+    if(head.canonical){
+      const origin = head.canonical.replace(/\/+$/,'');
+      extras.set('robots.txt', {name:'robots.txt', data:U.utf8(
+        'User-agent: *\n' + (/noindex/i.test(head.robots||'') ? 'Disallow: /\n' : 'Allow: /\n') +
+        'Sitemap: ' + origin + '/sitemap.xml\n')});
+      extras.set('sitemap.xml', {name:'sitemap.xml', data:U.utf8(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+        '  <url><loc>' + origin + '/</loc></url>\n</urlset>\n')});
+    }
+    if(formOn || (project.form && project.form.enabled)){
+      extras.set('functions/api/contact.js', {name:'functions/api/contact.js', data:U.utf8(contactFunction(project.form))});
+      extras.set('SETUP.md', {name:'SETUP.md', data:U.utf8(setupNotes(project))});
+    }
+  }
+
   return {
     doc,
     html: Model.serialize(doc, project.originalHtml),
-    slots, colors: colorList, problems, files
+    slots, colors: colorList, problems, files, extras,
+    seo: auditSeo(doc, head), formOn
   };
 }
 
@@ -893,6 +1400,10 @@ const AGENT_CSS = `
 [data-vse-ui] b{position:absolute!important;top:-17px!important;left:-1px!important;background:#DE521C!important;
   color:#fff!important;font:10px/1.6 ui-monospace,Menlo,monospace!important;padding:0 5px!important;
   border-radius:2px 2px 0 0!important;white-space:nowrap!important;font-weight:400!important}
+[data-vse-handle]{position:absolute!important;z-index:2147483647!important;background:#fff!important;
+  border:2px solid #DE521C!important;box-sizing:border-box!important;touch-action:none!important}
+[data-vse-handle="corner"]{width:14px!important;height:14px!important;border-radius:50%!important;cursor:nwse-resize!important}
+[data-vse-handle="bottom"]{width:32px!important;height:10px!important;border-radius:5px!important;cursor:ns-resize!important}
 [data-vse-editing]{outline:2px solid #DE521C!important;outline-offset:2px!important;background:rgba(255,255,255,.55)!important}
 `;
 
@@ -983,8 +1494,13 @@ function PREVIEW_AGENT(){
     hover = t; showUi(t);
   }, true);
   addEventListener('mouseleave', ()=>{ hover=null; ui.style.display='none'; }, true);
-  addEventListener('scroll', ()=>{ if(hover) showUi(hover); send({t:'scroll', y:scrollY}); }, true);
-  addEventListener('resize', ()=>{ if(hover) showUi(hover); });
+  addEventListener('scroll', ()=>{ if(hover) showUi(hover); placeHandles(); send({t:'scroll', y:scrollY}); }, true);
+  addEventListener('resize', ()=>{ if(hover) showUi(hover); placeHandles(); });
+  document.addEventListener('selectionchange', ()=>{
+    if(!editing) return;
+    const s2 = getSelection();
+    send({t:'selRange', has: !!(s2 && !s2.isCollapsed && editing.el.contains(s2.anchorNode))});
+  });
 
   /* ---- editing ---- */
   function stopEdit(commit){
@@ -1035,10 +1551,91 @@ function PREVIEW_AGENT(){
     const t = targetFor(e.target);
     if(!t) return;
     e.preventDefault(); e.stopPropagation();
+    selectEl(t.el, t.kind);
     if(t.kind === 'text') startEdit(t);
-    else send({t:'pick', key:t.key, kind:t.kind, url:t.url, path:pathOf(t.el)});
+    else if(e.detail >= 2) send({t:'pick', key:t.key, kind:t.kind, url:t.url, path:pathOf(t.el)});
+    else send({t:'hintPick', kind:t.kind});
   }, true);
   addEventListener('submit',(e)=>e.preventDefault(), true);
+
+  /* ---- selection, resize handles and colour ---- */
+  let sel = null;
+  const handles = [];
+  function mkHandle(kind){
+    const h = document.createElement('div');
+    h.setAttribute('data-vse',''); h.setAttribute('data-vse-handle', kind);
+    h.style.display = 'none';
+    document.documentElement.appendChild(h);
+    handles.push(h);
+    h.addEventListener('pointerdown', (e)=> startDrag(e, kind, h), true);
+    return h;
+  }
+  const hCorner = mkHandle('corner'), hBottom = mkHandle('bottom');
+
+  function placeHandles(){
+    if(!sel){ handles.forEach(h=>h.style.display='none'); return; }
+    const r = sel.el.getBoundingClientRect();
+    const corner = sel.kind === 'img';
+    hCorner.style.display = corner ? 'block' : 'none';
+    hBottom.style.display = corner ? 'none' : 'block';
+    if(corner){
+      hCorner.style.left = (r.right + scrollX - 7) + 'px';
+      hCorner.style.top  = (r.bottom + scrollY - 7) + 'px';
+    }else{
+      hBottom.style.left = (r.left + scrollX + r.width/2 - 16) + 'px';
+      hBottom.style.top  = (r.bottom + scrollY - 5) + 'px';
+    }
+  }
+  function selectEl(el, kind){
+    sel = {el, kind};
+    placeHandles();
+    let cs = {}; try{ cs = getComputedStyle(el); }catch(e){}
+    /* Warn when a child overrides the colour: colouring the parent will not
+       reach it, which is the <b class="badge"> case. */
+    let conflict = '';
+    for(const c of el.children){
+      try{
+        const cc = getComputedStyle(c).color;
+        if(cc && cc !== cs.color){ conflict = c.tagName.toLowerCase() + (c.className ? '.' + String(c.className).split(/\s+/)[0] : ''); break; }
+      }catch(e){}
+    }
+    send({t:'select', path:pathOf(el), kind, tag:el.tagName.toLowerCase(),
+          cls:(el.getAttribute('class')||'').split(/\s+/)[0] || '',
+          color:cs.color || '', fontSize:cs.fontSize || '',
+          width:Math.round(el.getBoundingClientRect().width),
+          height:Math.round(el.getBoundingClientRect().height),
+          natural: el.tagName === 'IMG' ? (el.naturalWidth||0) : 0,
+          conflict});
+  }
+  let drag = null;
+  function startDrag(e, kind){
+    if(!sel) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = sel.el.getBoundingClientRect();
+    drag = {kind, x:e.clientX, y:e.clientY, w:r.width, h:r.height};
+    try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+  }
+  addEventListener('pointermove', (e)=>{
+    if(!drag || !sel) return;
+    e.preventDefault();
+    if(drag.kind === 'corner'){
+      const w = Math.max(24, Math.round((drag.w + (e.clientX - drag.x)) / 10) * 10);
+      sel.el.style.maxWidth = w + 'px';
+      sel.el.style.height = 'auto';
+      drag.out = {'max-width': w + 'px', 'height':'auto'};
+    }else{
+      const h = Math.max(24, Math.round((drag.h + (e.clientY - drag.y)) / 10) * 10);
+      sel.el.style.height = h + 'px';
+      drag.out = {'height': h + 'px'};
+    }
+    placeHandles();
+    if(hover) showUi(hover);
+  }, true);
+  addEventListener('pointerup', ()=>{
+    if(!drag) return;
+    if(drag.out && sel) send({t:'style', path:pathOf(sel.el), decls:drag.out});
+    drag = null;
+  }, true);
 
   /* ---- broken images get a visible target so they can still be replaced ---- */
   function markBroken(){
@@ -1117,6 +1714,23 @@ function PREVIEW_AGENT(){
     else if(m.t === 'findStep') step(m.d);
     else if(m.t === 'clearFind') clearFind();
     else if(m.t === 'scrollTo') scrollTo(0, m.y||0);
+    else if(m.t === 'styleLive'){
+      const el = resolvePath(m.path || '');
+      if(el){ for(const k in m.decls) el.style.setProperty(k, m.decls[k]); placeHandles(); }
+    }
+    else if(m.t === 'colorSelection'){
+      const s2 = getSelection();
+      if(!editing || !s2 || s2.isCollapsed){ send({t:'noSelection'}); return; }
+      const range = s2.getRangeAt(0);
+      const span = document.createElement('span');
+      span.style.color = m.color;
+      try{ range.surroundContents(span); }
+      catch(err){ span.appendChild(range.extractContents()); range.insertNode(span); }
+      s2.removeAllRanges();
+      send({t:'edit', path:editing.path, html:editing.el.innerHTML});
+      editing.orig = editing.el.innerHTML;
+    }
+    else if(m.t === 'deselect'){ sel = null; placeHandles(); }
     else if(m.t === 'reveal'){
       const el = resolvePath(m.path||'');
       if(el){ el.scrollIntoView({block:'center', behavior:'smooth'}); hover={el, label:m.label||'selected'}; showUi(hover); }
@@ -1230,7 +1844,8 @@ function fail(msg, e){ log(msg + (e ? ' — ' + (e.message||e) : ''), 'err'); }
 
 function snapshot(){
   if(!S.project) return;
-  S.undo.push(JSON.stringify({edits:S.project.edits, images:S.project.images, colors:S.project.colors}));
+  S.undo.push(JSON.stringify({edits:S.project.edits, images:S.project.images, colors:S.project.colors,
+                              styles:S.project.styles, head:S.project.head, form:S.project.form}));
   if(S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;
   S.dirty = true;
@@ -1240,6 +1855,7 @@ function undo(){
   if(!S.undo.length || !S.project) return;
   const prev = JSON.parse(S.undo.pop());
   S.project.edits = prev.edits; S.project.images = prev.images; S.project.colors = prev.colors;
+  S.project.styles = prev.styles; S.project.head = prev.head; S.project.form = prev.form;
   $('#btnUndo').disabled = !S.undo.length;
   rebuild(true);
   log('Undo — ' + S.undo.length + ' step' + (S.undo.length===1?'':'s') + ' left');
@@ -1248,6 +1864,16 @@ function undo(){
 /* ==========================================================================
    8. Loading a site.
    ========================================================================== */
+function blankHead(){
+  return {title:'', description:'', canonical:'', robots:'', lang:'',
+          ogTitle:'', ogDescription:'', ogImage:'', twitterCard:'summary_large_image',
+          biz:{name:'', phone:'', email:'', street:'', city:'', region:'', postal:'', country:'',
+               hours:'', priceRange:'', areaServed:'', sameAs:''}};
+}
+function blankForm(){
+  return {enabled:false, to:'', from:'', subject:'', success:'Thanks — we\u2019ll get back to you shortly.',
+          turnstile:false, siteKey:''};
+}
 function newProject(html, name){
   return {
     v:1, id:'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
@@ -1255,12 +1881,22 @@ function newProject(html, name){
     createdAt: Date.now(), updatedAt: Date.now(),
     originalHtml: html,
     edits:Object.create(null), images:Object.create(null), colors:Object.create(null),
-    assets:Object.create(null)
+    styles:Object.create(null), assets:Object.create(null),
+    head:blankHead(), form:blankForm()
   };
 }
 
 /* Register every data: image already embedded in the source so it can be
    deduplicated, counted, and written out as a real file on folder export. */
+/* A readable filename for an image that was already embedded in the page. */
+function slugForSlot(slot){
+  if(slot.kind === 'img' && slot.alt) return U.slug(slot.alt, 'image');
+  if(!/^data:/i.test(slot.src)){
+    const base = slot.src.split(/[?#]/)[0].split('/').pop().replace(/\.[a-z0-9]+$/i,'');
+    if(base) return U.slug(base, 'image');
+  }
+  return slot.kind === 'img' ? 'image' : 'background';
+}
 function indexSource(project){
   const doc = Model.parse(project.originalHtml);
   const slots = Model.scanImages(doc);
@@ -1272,7 +1908,8 @@ function indexSource(project){
     if(!p){ bad++; fail('Could not decode an embedded image in ' + s.label); continue; }
     const hash = U.sha1(p.bytes);
     idx[s.src] = hash;
-    if(!S.assets[hash]) S.assets[hash] = {mime:p.mime, b64:U.bytesToB64(p.bytes), bytes:p.bytes.length, name:'embedded.'+U.extFor(p.mime), from:'page'};
+    if(!S.assets[hash]) S.assets[hash] = {mime:p.mime, b64:U.bytesToB64(p.bytes), bytes:p.bytes.length,
+      name:'embedded.'+U.extFor(p.mime), slug:slugForSlot(s), from:'page'};
     n++;
   }
   project.srcIndex = idx;
@@ -1299,6 +1936,10 @@ function openProjectData(p){
     if(!p || !p.originalHtml) throw new Error('not a project file');
     S.project = p;
     S.project.edits = p.edits || {}; S.project.images = p.images || {}; S.project.colors = p.colors || {};
+    S.project.styles = p.styles || Object.create(null);
+    S.project.head = Object.assign(blankHead(), p.head || {});
+    S.project.head.biz = Object.assign(blankHead().biz, (p.head && p.head.biz) || {});
+    S.project.form = Object.assign(blankForm(), p.form || {});
     S.assets = Object.create(null);
     for(const [h, a] of Object.entries(p.assets||{})) S.assets[h] = a;
     S.undo.length = 0; S.redo.length = 0; S.dirty = false;
@@ -1326,7 +1967,7 @@ function rebuild(reloadPreview){
     r = build(S.project, S.assets, 'preview');
   }catch(e){ fail('Rebuild failed', e); return {problems:[]}; }
   S.built = r;
-  renderImages(r); renderColors(r); renderStats(r); renderProblems(r);
+  renderImages(r); renderColors(r); renderStats(r); renderProblems(r); renderSeo(); renderForm(); renderElement();
   if(reloadPreview){
     const token = ++rebuildToken;
     const pv = $('#pv');
@@ -1429,6 +2070,90 @@ function renderColors(r){
   }
 }
 
+function renderElement(){
+  const box = $('#elBody'); box.innerHTML = '';
+  const sel = S.sel;
+  if(!sel || !S.project){ box.append(el('div','empty','Click anything in the preview.')); return; }
+  const over = (S.project.styles[sel.path] || {});
+  const setDecl = (prop, val, label)=>{
+    snapshot();
+    const cur = S.project.styles[sel.path] || (S.project.styles[sel.path] = Object.create(null));
+    if(val === '' || val == null) delete cur[prop]; else cur[prop] = val;
+    if(!Object.keys(cur).length) delete S.project.styles[sel.path];
+    log(label, 'ok');
+    sendPv({t:'styleLive', path:sel.path, decls:{[prop]: val || ''}});
+    rebuild(false);
+    renderElement();
+  };
+
+  const head = el('div','item');
+  head.append(el('span','tag', sel.kind), el('div','meta'), el('span'));
+  head.children[1].append(el('div','nm', '<' + sel.tag + '>' + (sel.cls ? '.' + sel.cls : '')),
+                          el('div','sub', sel.path + ' · ' + sel.width + '×' + sel.height + ' px'));
+  box.append(head);
+
+  /* --- colour --- */
+  box.append(el('div','lbl','Text colour'));
+  const crow = el('div','row');
+  const wrap = el('label','chipc');
+  const cin = el('input'); cin.type='color';
+  cin.value = over.color || rgbToHex(sel.color) || '#000000';
+  wrap.style.background = cin.value;
+  cin.oninput = ()=> wrap.style.background = cin.value;
+  wrap.append(cin);
+  const bEl = el('button','mini','Apply to element');
+  bEl.onclick = ()=> setDecl('color', cin.value, 'Coloured <' + sel.tag + '> ' + cin.value);
+  const bSel = el('button','mini','Selected words');
+  bSel.id = 'btnColorSel'; bSel.disabled = !S.hasRange;
+  bSel.onclick = ()=> sendPv({t:'colorSelection', color:cin.value});
+  crow.append(wrap, bEl, bSel);
+  box.append(crow);
+  if(sel.conflict) box.append(el('div','note','“' + sel.conflict + '” inside this element sets its own colour, so it will keep it. Select those words and use “Selected words” to change them.'));
+
+  /* --- size --- */
+  if(sel.kind === 'img'){
+    box.append(el('div','lbl','Width' + (sel.natural ? ' — original is ' + sel.natural + 'px' : '')));
+    const n = el('input','field'); n.type='number'; n.step='10'; n.placeholder='auto';
+    n.value = parseInt(over['max-width']||'', 10) || '';
+    n.onchange = ()=> n.value ? setDecl('max-width', Math.max(24, +n.value) + 'px', 'Set width to ' + n.value + 'px')
+                              : setDecl('max-width', '', 'Width back to the page default');
+    const r2 = el('div','row'); r2.append(n);
+    const full = el('button','mini','Full width');
+    full.onclick = ()=> setDecl('max-width', '100%', 'Image set to full width');
+    r2.append(full);
+    box.append(r2);
+    box.append(el('div','hint','Or drag the round handle on the image itself.'));
+  }else{
+    box.append(el('div','lbl','Text size'));
+    const fs = el('input','field'); fs.type='number'; fs.step='1'; fs.placeholder=parseInt(sel.fontSize)||'';
+    fs.value = parseInt(over['font-size']||'', 10) || '';
+    fs.onchange = ()=> fs.value ? setDecl('font-size', Math.max(8, +fs.value) + 'px', 'Text size set to ' + fs.value + 'px')
+                                : setDecl('font-size', '', 'Text size back to the page default');
+    box.append(fs);
+    box.append(el('div','lbl','Height'));
+    const ht = el('input','field'); ht.type='number'; ht.step='10'; ht.placeholder='auto';
+    ht.value = parseInt(over['height']||'', 10) || '';
+    ht.onchange = ()=> ht.value ? setDecl('height', Math.max(24, +ht.value) + 'px', 'Height set to ' + ht.value + 'px')
+                                : setDecl('height', '', 'Height back to the page default');
+    box.append(ht);
+    box.append(el('div','hint','Or drag the bar at the bottom edge.'));
+  }
+
+  if(Object.keys(over).length){
+    box.append(el('div','hr'));
+    box.append(el('div','lbl','Changes here'));
+    for(const [k,v] of Object.entries(over)) box.append(el('div','sub', k + ': ' + v));
+    const rst = el('button','mini','Undo all changes to this element');
+    rst.onclick = ()=>{ snapshot(); delete S.project.styles[sel.path];
+      log('Cleared every change on ' + sel.path); rebuild(true); renderElement(); };
+    const rrow = el('div','row'); rrow.append(rst); box.append(rrow);
+  }
+}
+function rgbToHex(rgb){
+  const m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(rgb||'');
+  return m ? C.hex(+m[1], +m[2], +m[3]) : '';
+}
+
 /* ==========================================================================
    10. Messages from the preview.
    ========================================================================== */
@@ -1455,6 +2180,19 @@ addEventListener('message', (e)=>{
     }
     const slot = (S.built.slots||[]).find(s=>s.key===m.key);
     if(slot) openPicker(slot); else fail('Could not match that image to a slot (' + m.key + ')');
+  }
+  else if(m.t === 'select'){ S.sel = m; renderElement(); }
+  else if(m.t === 'selRange'){ S.hasRange = m.has; const b = $('#btnColorSel'); if(b) b.disabled = !m.has; }
+  else if(m.t === 'noSelection'){ log('Select some words first, then apply the colour.', 'warn'); }
+  else if(m.t === 'hintPick'){
+    if(!S.hintedPick){ S.hintedPick = true; log('Drag the handle to resize. Double-click the image to swap it.'); }
+  }
+  else if(m.t === 'style'){
+    snapshot();
+    const cur = S.project.styles[m.path] || (S.project.styles[m.path] = Object.create(null));
+    for(const k in m.decls) cur[k] = m.decls[k];
+    log('Resized ' + m.path + ' — ' + Object.entries(m.decls).map(([k,v])=>k+':'+v).join(', '), 'ok');
+    rebuild(false);              // the preview already shows the new size
   }
   else if(m.t === 'scroll'){ S.scrollY = m.y; }
   else if(m.t === 'find'){ S.findN = m.n; S.findI = m.i; $('#findCnt').textContent = m.n ? (m.i + '/' + m.n) : ($('#findInput').value ? 'none' : ''); }
@@ -1516,6 +2254,135 @@ function finishAsset(mime, bytes, name, w, h, note){
 }
 
 /* ==========================================================================
+   11b. SEO and Form panels.
+   ========================================================================== */
+const BIZ_FIELDS = [
+  ['name','Business name','Alvarez Roofing'],
+  ['phone','Phone','+63 917 000 0000'],
+  ['email','Email','office@example.com'],
+  ['street','Street','12 Rizal Ave'],
+  ['city','City or town',''],
+  ['region','Province or state',''],
+  ['postal','Postcode',''],
+  ['country','Country code','PH'],
+  ['hours','Opening hours','Mo-Sa 07:00-17:00'],
+  ['priceRange','Price range','$$'],
+  ['areaServed','Areas served, comma separated',''],
+  ['sameAs','Facebook or Google listing, one per line','']
+];
+let seoBuilt = false;
+function bindSeo(){
+  if(seoBuilt) return; seoBuilt = true;
+  const push = (fn, label)=>{ snapshot(); fn(); log(label); rebuild(true); renderSeo(); };
+  const tie = (id, key, label)=>{
+    const f = $('#'+id);
+    f.onchange = ()=> push(()=> S.project.head[key] = f.value.trim(), label);
+    f.oninput = ()=> renderSerp();
+  };
+  tie('seoTitle','title','Page title updated');
+  tie('seoDesc','description','Meta description updated');
+  tie('seoCanonical','canonical','Site address updated');
+  tie('seoRobots','robots','Search visibility updated');
+  tie('seoLang','lang','Page language updated');
+  $('#seoOgImage').onchange = ()=> push(()=> S.project.head.ogImage = $('#seoOgImage').value, 'Sharing image updated');
+  const box = $('#bizFields');
+  for(const [key, label, ph] of BIZ_FIELDS){
+    box.append(el('div','lbl', label));
+    const f = el(key === 'sameAs' || key === 'hours' ? 'textarea' : 'input', 'field');
+    if(f.tagName === 'TEXTAREA') f.rows = 2;
+    f.placeholder = ph; f.id = 'biz_' + key;
+    f.onchange = ()=> push(()=> S.project.head.biz[key] = f.value.trim(), 'Business ' + label.toLowerCase() + ' updated');
+    box.append(f);
+  }
+}
+function renderSerp(){
+  const h = S.project ? S.project.head : blankHead();
+  const t = ($('#seoTitle').value || h.title || '(no title yet)');
+  const d = ($('#seoDesc').value || h.description || 'Google will pick a sentence from the page instead.');
+  const u = (h.canonical || 'https://example.com').replace(/^https?:\/\//,'');
+  $('#serp').innerHTML = '';
+  const a = el('div', null, u); a.style.cssText = 'font:11px/1.4 var(--mono);color:var(--ink-3)';
+  const b = el('div', null, t.slice(0,70)); b.style.cssText = 'color:#1a0dab;font-size:14px;margin:2px 0';
+  const c = el('div', null, d.slice(0,165)); c.style.cssText = 'font-size:12px;color:var(--ink-2)';
+  $('#serp').append(a, b, c);
+  const cnt = (id, val, lim)=>{ const e2 = $('#'+id); e2.textContent = val.length + '/' + lim;
+    e2.style.color = val.length > lim ? 'var(--bad)' : 'var(--ink-3)'; };
+  cnt('cTitle', $('#seoTitle').value, 60);
+  cnt('cDesc', $('#seoDesc').value, 155);
+}
+function renderSeo(){
+  if(!S.project) return;
+  bindSeo();
+  const h = S.project.head;
+  $('#seoTitle').value = h.title; $('#seoDesc').value = h.description;
+  $('#seoCanonical').value = h.canonical; $('#seoRobots').value = h.robots; $('#seoLang').value = h.lang;
+  for(const [key] of BIZ_FIELDS){ const f = $('#biz_'+key); if(f) f.value = h.biz[key] || ''; }
+  const sel = $('#seoOgImage'); sel.innerHTML = '';
+  const none = el('option', null, 'No sharing image'); none.value = '';
+  sel.append(none);
+  for(const [hash, a] of Object.entries(S.assets)){
+    const o = el('option', null, (a.slug || a.name) + ' · ' + U.fmtBytes(a.bytes));
+    o.value = hash; sel.append(o);
+  }
+  sel.value = h.ogImage || '';
+  renderSerp();
+  const audit = (S.built && S.built.seo) || [];
+  const box = $('#seoAudit'); box.innerHTML = '';
+  $('#tSeo').textContent = audit.length ? String(audit.length) : '';
+  if(!audit.length){ box.append(el('div','empty','Nothing outstanding.')); return; }
+  for(const a of audit){
+    const row = el('div','item');
+    row.append(el('span','tag' + (a.level==='err' ? ' edited' : ''), a.level === 'err' ? 'fix' : 'check'));
+    row.append(el('div','meta')); row.children[1].append(el('div','nm', a.msg));
+    const act = el('div','row');
+    if(a.fix === 'images'){ const b = el('button','mini','Show'); b.onclick = ()=> setTab('p-images'); act.append(b); }
+    row.append(act);
+    box.append(row);
+  }
+}
+
+let formBuilt = false;
+function bindForm(){
+  if(formBuilt) return; formBuilt = true;
+  const push = (fn, label)=>{ snapshot(); fn(); log(label); rebuild(true); renderForm(); };
+  $('#fmEnabled').onchange = ()=> push(()=> S.project.form.enabled = $('#fmEnabled').checked,
+    $('#fmEnabled').checked ? 'Contact form will be wired up on export' : 'Contact form left as it is');
+  const tie = (id, key, label)=>{ const f = $('#'+id); f.onchange = ()=> push(()=> S.project.form[key] = f.value.trim(), label); };
+  tie('fmTo','to','Recipient updated');
+  tie('fmFrom','from','Sender address updated');
+  tie('fmSubject','subject','Subject line updated');
+  tie('fmSuccess','success','Confirmation message updated');
+  tie('fmSiteKey','siteKey','Turnstile site key updated');
+  $('#fmTurnstile').onchange = ()=> push(()=> S.project.form.turnstile = $('#fmTurnstile').checked,
+    $('#fmTurnstile').checked ? 'Turnstile bot check switched on' : 'Turnstile switched off; the honeypot still applies');
+}
+function renderForm(){
+  if(!S.project) return;
+  bindForm();
+  const f = S.project.form;
+  $('#fmEnabled').checked = !!f.enabled;
+  $('#fmBody').style.display = f.enabled ? 'block' : 'none';
+  $('#fmTo').value = f.to; $('#fmFrom').value = f.from; $('#fmSubject').value = f.subject;
+  $('#fmSuccess').value = f.success; $('#fmTurnstile').checked = !!f.turnstile;
+  $('#fmSiteKey').style.display = f.turnstile ? 'block' : 'none';
+  $('#fmSiteKey').value = f.siteKey;
+  const box = $('#fmStatus'); box.innerHTML = '';
+  if(!f.enabled) return;
+  const issues = [];
+  const hasForm = S.built && S.built.doc && S.built.doc.querySelector('form');
+  if(!hasForm) issues.push('This page has no <form>. SETUP.md in the export includes markup you can paste in.');
+  if(!f.to) issues.push('No recipient yet, so nobody receives the enquiries.');
+  if(!f.from) issues.push('No sender address yet. It must be on a domain with Email Routing switched on.');
+  if(f.turnstile && !f.siteKey) issues.push('Turnstile is on but has no site key.');
+  if(!issues.length){
+    box.append(el('div','note','Ready. The export will include functions/api/contact.js and a SETUP.md checklist with these values filled in.'));
+  }else{
+    for(const i of issues){ const d = el('div','item'); d.append(el('span','tag edited','fix'), el('div','meta'), el('span'));
+      d.children[1].append(el('div','nm', i)); box.append(d); }
+  }
+}
+
+/* ==========================================================================
    12. Image picker.
    ========================================================================== */
 function openPicker(slot){
@@ -1532,6 +2399,19 @@ function openPicker(slot){
                             : (slot.alt ? 'This is the page’s own wording.' : 'This image has no alt text yet.'));
   $('#mImgInfo').textContent = slot.hidden ? 'Currently hidden.' :
     (slot.effective||'').startsWith('data:') ? 'Currently an embedded image.' : 'Currently ' + (slot.effective||'—').slice(0,70);
+  const cur = S.project.images[slot.key];
+  const curHash = (cur && cur.hash) || (S.project.srcIndex && S.project.srcIndex[slot.src]);
+  const fn = $('#mImgFile');
+  fn.disabled = !curHash;
+  fn.value = curHash && S.assets[curHash] ? (S.assets[curHash].slug || U.slug(S.assets[curHash].name)) : '';
+  fn.onchange = ()=>{
+    if(!curHash || !S.assets[curHash]) return;
+    snapshot();
+    S.assets[curHash].slug = U.slug(fn.value, 'image');
+    fn.value = S.assets[curHash].slug;
+    log('Exported filename set to ' + fn.value + '.' + curHash.slice(0,12) + '.' + U.extFor(S.assets[curHash].mime), 'ok');
+    rebuild(false);
+  };
   const grid = $('#mImgGrid'); grid.innerHTML = '';
   const entries = Object.entries(S.assets);
   if(!entries.length) grid.append(el('div','empty','Nothing here yet — upload one.'));
@@ -1552,6 +2432,7 @@ function setImage(hash, name){
   const slot = (S.built.slots||[]).find(s=>s.key===key);
   const alt = $('#mImgAlt').disabled ? undefined : ($('#mImgAlt').value || humanAlt(name));
   S.project.images[key] = {hash, alt};
+  if(S.assets[hash] && !S.assets[hash].slug) S.assets[hash].slug = U.slug(alt || name, 'image');
   if(alt !== undefined) $('#mImgAlt').value = alt;
   log('Image replaced at ' + key + ' → ' + hash.slice(0,12) + '.' + U.extFor(S.assets[hash].mime), 'ok');
   rebuild(true);
@@ -1631,12 +2512,16 @@ $('#btnExportSingle').onclick = ()=>{
 $('#btnExportZip').onclick = ()=>{
   const r = verifyDeterminism('folder'); if(!r) return;
   if(r.problems.length) fail(r.problems.length + ' problem(s) in this build — check the Info panel before you upload this.');
-  const files = [{name:'index.html', data:U.utf8(r.html)}, ...[...r.files.values()].sort((a,b)=>a.name<b.name?-1:1)];
+  const imgs = [...r.files.values()].sort((a,b)=>a.name<b.name?-1:1);
+  const extras = [...r.extras.values()].sort((a,b)=>a.name<b.name?-1:1);
+  const files = [{name:'index.html', data:U.utf8(r.html)}, ...imgs, ...extras];
   const zip = U.zip(files);
   const size = download(safeName()+'.zip', [zip], 'application/zip');
-  const imgBytes = files.slice(1).reduce((n,f)=>n+f.data.length,0);
-  log('Exported folder — index.html + ' + (files.length-1) + ' image' + (files.length===2?'':'s') +
-      ' (' + U.fmtBytes(imgBytes) + '), zip ' + U.fmtBytes(size) + '. Filenames are content hashes, so unchanged images keep their names on the next deploy.', 'ok');
+  const imgBytes = imgs.reduce((n,f)=>n+f.data.length,0);
+  log('Exported folder — index.html + ' + imgs.length + ' image' + (imgs.length===1?'':'s') +
+      ' (' + U.fmtBytes(imgBytes) + ')' + (extras.length ? ' + ' + extras.map(f=>f.name).join(', ') : '') +
+      ', zip ' + U.fmtBytes(size) + '. Image names carry a content hash, so unchanged pictures keep their filename on the next deploy.', 'ok');
+  if(r.formOn) log('The contact form is wired to /api/contact. Read SETUP.md in the zip before you deploy — it needs four secrets on the Pages project.', 'warn');
 };
 
 /* ==========================================================================
@@ -1650,7 +2535,8 @@ function projectForSave(){
   return {
     v:1, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
     originalHtml:p.originalHtml,
-    edits:p.edits, images:p.images, colors:p.colors, assets
+    edits:p.edits, images:p.images, colors:p.colors, styles:p.styles,
+    head:p.head, form:p.form, assets
     /* srcIndex is derived from originalHtml, so it is never written out */
   };
 }
@@ -1891,6 +2777,7 @@ function runTests(){
       indexSource(p);
       return p;
     };
+    const pathOfIn = (html, sel)=> pathOf(Model.parse(html).querySelector(sel));
 
     T('SHA-1 matches the reference vector for "abc"', ()=>{
       const h = U.sha1(U.utf8('abc'));
@@ -2014,9 +2901,23 @@ function runTests(){
       p.images[slots.find(s=>s.kind==='css').key] = {hash:b.hash};
       const r2 = build(p, S.assets, 'folder');
       if(![...r2.files.keys()].includes(nameA)) throw new Error('filename changed when another image was added');
-      if(!/images\/[0-9a-f]{12}\.jpg/.test(r2.html)) throw new Error('CSS url() was not repointed at images/');
+      if(!/images\/[a-z0-9-]+\.[0-9a-f]{12}\.jpg/.test(r2.html)) throw new Error('CSS url() was not repointed at images/');
       if(!new RegExp('src="' + nameA + '"').test(r2.html)) throw new Error('<img src> was not repointed');
       return nameA + ' stayed put; one file for two slots';
+    });
+    T('Exported files are named slug.hash.ext, and alt edits never rename them', ()=>{
+      const p = P();
+      const a = finishAsset('image/jpeg', U.utf8('PHOTO-ONE'), 'Ridge Cap Repair.JPG', 800, 600, '');
+      S.assets[a.hash].slug = U.slug('Standing seam roof, north side');
+      const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+      p.images[key] = {hash:a.hash, alt:'Standing seam roof'};
+      const named = (r)=> [...r.files.keys()].find(n=>n.endsWith('.jpg'));
+      const first = named(build(p, S.assets, 'folder'));
+      if(!/^images\/standing-seam-roof-north-side\.[0-9a-f]{12}\.jpg$/.test(first)) throw new Error('unexpected name: ' + first);
+      p.images[key].alt = 'A completely different description';
+      const second = named(build(p, S.assets, 'folder'));
+      if(first !== second) throw new Error('editing alt text renamed the file');
+      return first;
     });
     T('Replacing an image rewrites its alt text and drops stale srcset', ()=>{
       const p = P();
@@ -2059,6 +2960,33 @@ function runTests(){
       if(!/alt="Ridge cap repair after a storm"/.test(html)) throw new Error('alt lost in the round trip');
       return 'alt intact after save and reopen';
     });
+    T('A per-element color override beats the palette, and only there', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const h1 = doc.querySelector('h1');
+      p.styles[pathOf(h1)] = {'color':'#b3261e'};
+      const html = build(p, S.assets, 'preview').html;
+      if(!/<h1 style="color:#b3261e">/.test(html)) throw new Error('inline color not applied');
+      if((html.match(/#b3261e/g)||[]).length !== 1) throw new Error('the override leaked to other elements');
+      return 'one element recolored, nothing else touched';
+    });
+    T('Size overrides merge into an existing style attribute safely', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const card = doc.querySelector('.card[style]');       // already holds url(data:...;base64,)
+      p.styles[pathOf(card)] = {'height':'260px'};
+      const html = build(p, S.assets, 'preview').html;
+      if(!/height:260px/.test(html)) throw new Error('height not applied');
+      if(!/background-image:url\(/.test(html)) throw new Error('the data URI was chopped at its semicolon');
+      return 'height added, data URI intact';
+    });
+    T('Style overrides are reported when their element disappears', ()=>{
+      const p = P();
+      p.styles['7.7.7'] = {'color':'#000000'};
+      const r = build(p, S.assets, 'preview');
+      if(!r.problems.some(x=>x.kind==='style')) throw new Error('not reported');
+      return 'reported, not silently dropped';
+    });
     T('Hiding an image removes it without touching the rest', ()=>{
       const p = P();
       const key = build(p, S.assets, 'preview').slots.find(s=>s.kind==='img').key;
@@ -2079,6 +3007,124 @@ function runTests(){
       if(d1.length !== d2.length) throw new Error('line count changed');
       if(changed !== 1) throw new Error(changed + ' lines changed');
       return 'exactly 1 line differs';
+    });
+    T('SEO tags are created when absent and updated when present', ()=>{
+      const p = P();
+      p.head.title = 'Alvarez Roofing — storm damage repair';
+      p.head.description = 'Roof repair and replacement, seven days a week.';
+      p.head.canonical = 'https://alvarezroofing.com';
+      p.head.lang = 'en-PH';
+      const html = build(p, S.assets, 'single').html;
+      if(!/<title>Alvarez Roofing/.test(html)) throw new Error('existing title not replaced');
+      if((html.match(/<title>/g)||[]).length !== 1) throw new Error('a second title was added');
+      if(!/<meta name="description" content="Roof repair/.test(html)) throw new Error('description not created');
+      if(!/<link rel="canonical" href="https:\/\/alvarezroofing.com">/.test(html)) throw new Error('canonical missing');
+      if(!/<html lang="en-PH">/.test(html)) throw new Error('lang not set');
+      if(!/property="og:title"/.test(html)) throw new Error('Open Graph not filled from the title');
+      return 'title, description, canonical, lang and og: tags';
+    });
+    T('Head injection never shifts an element path', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const cap = doc.querySelector('.cap');
+      p.edits[pathOf(cap)] = 'EDITED';
+      p.head.title = 'New title'; p.head.description = 'New description';
+      p.head.biz.name = 'Alvarez Roofing'; p.head.canonical = 'https://alvarezroofing.com';
+      const r = build(p, S.assets, 'single');
+      if(r.problems.length) throw new Error(r.problems[0].msg);
+      if(!/EDITED/.test(r.html)) throw new Error('the body edit was lost');
+      const again = build(p, S.assets, 'single');
+      if(again.html !== r.html) throw new Error('not deterministic with head tags');
+      return 'body paths still resolve, output still byte-identical';
+    });
+    T('A business listing is written as valid JSON-LD', ()=>{
+      const p = P();
+      p.head.biz.name = 'Alvarez Roofing';
+      p.head.biz.phone = '+63 917 000 0000';
+      p.head.biz.city = 'Dipolog'; p.head.biz.country = 'PH';
+      p.head.biz.hours = 'Mo-Sa 07:00-17:00';
+      p.head.canonical = 'https://alvarezroofing.com';
+      const html = build(p, S.assets, 'single').html;
+      const m = /application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+      if(!m) throw new Error('no JSON-LD block');
+      const ld = JSON.parse(m[1]);
+      if(ld['@type'] !== 'LocalBusiness') throw new Error('wrong type');
+      if(ld.address.addressLocality !== 'Dipolog') throw new Error('address not built');
+      if(!Array.isArray(ld.openingHours)) throw new Error('hours not a list');
+      return ld['@type'] + ' with address, phone and hours';
+    });
+    T('The audit catches a missing description and a missing viewport', ()=>{
+      const r = build(P(), S.assets, 'single');
+      const msgs = r.seo.map(x=>x.msg).join(' | ');
+      if(!/description/i.test(msgs)) throw new Error('missed the description');
+      if(!/viewport/i.test(msgs)) throw new Error('missed the viewport');
+      return r.seo.length + ' items flagged';
+    });
+    T('robots.txt and sitemap.xml are written once a site address is set', ()=>{
+      const p = P();
+      let r = build(p, S.assets, 'folder');
+      if(r.extras.has('sitemap.xml')) throw new Error('written without an address');
+      p.head.canonical = 'https://alvarezroofing.com/';
+      r = build(p, S.assets, 'folder');
+      const sm = new TextDecoder().decode(r.extras.get('sitemap.xml').data);
+      if(!/<loc>https:\/\/alvarezroofing.com\/<\/loc>/.test(sm)) throw new Error('bad sitemap: ' + sm);
+      const rb = new TextDecoder().decode(r.extras.get('robots.txt').data);
+      if(!/Sitemap: https:\/\/alvarezroofing.com\/sitemap.xml/.test(rb)) throw new Error('bad robots.txt');
+      return 'both written, pointing at the right origin';
+    });
+    T('The contact form is rewritten and its function is written out', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form><input type="text" name="name"><input type="email" name="email">' +
+        '<textarea name="message"></textarea><button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true; p.form.to = 'owner@example.com'; p.form.from = 'forms@example.com';
+      const r = build(p, S.assets, 'folder');
+      if(!/<form data-contact-form="" action="\/api\/contact" method="post"/.test(r.html)) throw new Error('form not repointed');
+      if(!/name="company_website"/.test(r.html)) throw new Error('honeypot missing');
+      if(/challenges\.cloudflare\.com/.test(r.html)) throw new Error('Turnstile loaded when it was switched off');
+      const fn = new TextDecoder().decode(r.extras.get('functions/api/contact.js').data);
+      if(!/onRequestPost/.test(fn)) throw new Error('function has no POST handler');
+      if(!/email\/sending\/send/.test(fn)) throw new Error('function does not call Email Service');
+      if(!/replyTo/.test(fn)) throw new Error('no reply-to, so replies would go nowhere useful');
+      const md = new TextDecoder().decode(r.extras.get('SETUP.md').data);
+      if(!/owner@example.com/.test(md)) throw new Error('checklist not filled in');
+      return 'form repointed, honeypot added, function + checklist written';
+    });
+    T('A form field with no name is given one and reported', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form><input type="text" placeholder="Your Name"><button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true;
+      const r = build(p, S.assets, 'folder');
+      if(!/name="your-name"/.test(r.html)) throw new Error('field was not named');
+      if(!r.problems.some(x=>x.kind==='form')) throw new Error('not reported');
+      return 'named "your-name" and flagged';
+    });
+    T('Turning Turnstile on adds the widget and the secret to the checklist', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>', '<form><input name="name"></form><footer>');
+      indexSource(p);
+      p.form.enabled = true; p.form.turnstile = true; p.form.siteKey = '0xTEST';
+      const r = build(p, S.assets, 'folder');
+      if(!/class="cf-turnstile" data-sitekey="0xTEST"/.test(r.html)) throw new Error('widget missing');
+      if(!/challenges\.cloudflare\.com\/turnstile/.test(r.html)) throw new Error('script missing');
+      const md = new TextDecoder().decode(r.extras.get('SETUP.md').data);
+      if(!/TURNSTILE_SECRET/.test(md)) throw new Error('checklist does not mention the secret');
+      return 'widget, script and checklist entry';
+    });
+    T('Switching the form off leaves the page exactly as it was', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>', '<form><input name="name"></form><footer>');
+      indexSource(p);
+      const before = build(p, S.assets, 'folder');
+      p.form.enabled = true;
+      p.form.enabled = false;
+      const after = build(p, S.assets, 'folder');
+      if(before.html !== after.html) throw new Error('the page changed anyway');
+      if(after.extras.size) throw new Error('extra files written for a form that is off');
+      return 'byte-identical, no extra files';
     });
     T('Closing script tags are escaped before going into a script block', ()=>{
       const out = U.embedInScript('{"html":"<p>hi</' + 'script><b>x</b>"}');

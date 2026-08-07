@@ -131,6 +131,23 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mini{border:1px solid var(--rule);background:var(--panel-2);border-radius:2px;padding:3px 5px;font-size:11px;cursor:pointer;line-height:1}
 .mini:hover{background:#fff;border-color:var(--blueprint)}
 
+/* ancestor trail */
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:2px 0 6px}
+.crumb{border:1px solid var(--rule-2);background:var(--panel-2);border-radius:2px;padding:2px 5px;cursor:pointer;
+  font:10px/1.5 var(--mono);color:var(--ink-2);white-space:nowrap}
+.crumb:hover{border-color:var(--marking);color:var(--marking);background:#fff}
+.crumb.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.crumbs .sep{color:var(--ink-3);font-size:10px}
+
+/* nudge pad */
+.nudgepad{display:grid;grid-template-columns:repeat(3,34px);gap:4px;justify-content:center;margin:6px 0}
+.nbtn{height:30px;border:1px solid var(--rule);background:var(--panel-2);border-radius:var(--r);cursor:pointer;
+  font-size:14px;line-height:1;color:var(--ink);padding:0}
+.nbtn:hover{background:#fff;border-color:var(--marking);color:var(--marking)}
+.nbtn:active{transform:translateY(1px)}
+.nbtn.reset{font-size:12px;color:var(--ink-3)}
+.row .nbtn{width:30px;flex:none}
+
 /* colors */
 .swatches{display:flex;flex-direction:column;gap:5px}
 .sw{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:5px 6px;border:1px solid var(--rule-2);border-radius:var(--r)}
@@ -932,6 +949,65 @@ function auditSeo(doc, head){
 }
 
 /* ==========================================================================
+   3b2. Spacing nudges.
+        Every adjustment is a margin, so the element stays in normal flow and
+        whatever sits below it moves too. Nothing is written as an inline
+        style, because an inline style cannot hold one value for desktop and
+        another for a phone. Instead each nudged element gets a data-nudge
+        attribute and all the rules live in one block you can read — or
+        delete outright — at the bottom of <head>.
+
+        Breakpoints: the tablet rule is max-width:1024px so it also covers a
+        768px tablet, and the phone rule is max-width:640px so it does NOT
+        catch that tablet. Narrower blocks come last, so a phone inherits the
+        tablet value unless you nudge it separately.
+   ========================================================================== */
+const NUDGE_MEDIA = {tablet:'(max-width: 1024px)', phone:'(max-width: 640px)'};
+const NUDGE_BUCKETS = ['desktop','tablet','phone'];
+
+function applyNudges(doc, project, problems){
+  const all = project.nudges || {};
+  const paths = Object.keys(all).sort();
+  if(!paths.length) return '';
+  const rules = {desktop:[], tablet:[], phone:[]};
+  let any = false;
+  for(const path of paths){
+    const rec = all[path];
+    const el = resolvePath(doc.documentElement, path);
+    if(!el){ problems.push({kind:'nudge', ref:path, msg:'Spacing adjustment ' + rec.id + ' points at an element that is no longer on the page'}); continue; }
+    el.setAttribute('data-nudge', rec.id);
+    /* The attribute is repeated to lift specificity to 0,2,0, which beats the
+       .section .heading style of selector templates usually use. When even
+       that loses, the editor notices and adds !important. */
+    const sel = '[data-nudge="' + rec.id + '"][data-nudge]';
+    const bang = rec.important ? ' !important' : '';
+    for(const bucket of NUDGE_BUCKETS){
+      const decls = rec[bucket] || {};
+      const keys = Object.keys(decls).sort();
+      if(!keys.length) continue;
+      rules[bucket].push(sel + '{' + keys.map(k=>k + ':' + decls[k] + bang).join(';') + '}');
+      any = true;
+    }
+  }
+  if(!any) return '';
+  const out = ['/* Spacing adjustments written by Site Editor.',
+               '   Every one of them is here. Delete this block to remove them all. */'];
+  out.push(...rules.desktop);
+  for(const bucket of ['tablet','phone']){
+    if(!rules[bucket].length) continue;
+    out.push('@media ' + NUDGE_MEDIA[bucket] + ' {');
+    out.push(...rules[bucket].map(r=>'  ' + r));
+    out.push('}');
+  }
+  const css = '\n' + out.join('\n') + '\n';
+  const st = doc.createElement('style');
+  st.setAttribute('data-nudge-block','');
+  st.textContent = css;
+  doc.head.appendChild(st);
+  return css;
+}
+
+/* ==========================================================================
    3c. Contact form. The page posts to a Pages Function that hands the message
        to Cloudflare Email Service. No third party, no database.
    ========================================================================== */
@@ -1336,6 +1412,10 @@ function build(project, assets, mode){
          path-based step above. --------------------------------------------- */
   const formOn = applyForm(doc, project.form, problems);
 
+  /* 4e0. spacing nudges. Sets attributes on elements (no path shift) and
+          appends one stylesheet block. ------------------------------------- */
+  const nudgeCss = applyNudges(doc, project, problems);
+
   /* 4e. head. Injecting into <head> would shift child indexes, so this is
          strictly last. ----------------------------------------------------- */
   const head = project.head || blankHead();
@@ -1375,7 +1455,7 @@ function build(project, assets, mode){
   return {
     doc,
     html: Model.serialize(doc, project.originalHtml),
-    slots, colors: colorList, problems, files, extras,
+    slots, colors: colorList, problems, files, extras, nudgeCss,
     seo: auditSeo(doc, head), formOn
   };
 }
@@ -1400,6 +1480,11 @@ const AGENT_CSS = `
 [data-vse-ui] b{position:absolute!important;top:-17px!important;left:-1px!important;background:#DE521C!important;
   color:#fff!important;font:10px/1.6 ui-monospace,Menlo,monospace!important;padding:0 5px!important;
   border-radius:2px 2px 0 0!important;white-space:nowrap!important;font-weight:400!important}
+[data-vse-selbox]{position:absolute!important;pointer-events:none!important;z-index:2147483645!important;
+  border:1px dashed #DE521C!important;box-sizing:border-box!important;background:transparent!important}
+[data-vse-selbox] b{position:absolute!important;bottom:-17px!important;right:-1px!important;background:#15222C!important;
+  color:#fff!important;font:10px/1.6 ui-monospace,Menlo,monospace!important;padding:0 5px!important;
+  border-radius:0 0 2px 2px!important;white-space:nowrap!important;font-weight:400!important}
 [data-vse-handle]{position:absolute!important;z-index:2147483647!important;background:#fff!important;
   border:2px solid #DE521C!important;box-sizing:border-box!important;touch-action:none!important}
 [data-vse-handle="corner"]{width:14px!important;height:14px!important;border-radius:50%!important;cursor:nwse-resize!important}
@@ -1456,18 +1541,43 @@ function PREVIEW_AGENT(){
     return null;
   }
   /* what, if anything, is editable under the pointer */
+  function tagLabel(el){
+    const cls = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean)[0];
+    return el.tagName.toLowerCase() + (cls ? '.' + cls : '');
+  }
+  function kindOf(el){
+    if(!el || el.nodeType !== 1) return null;
+    if(el.tagName === 'IMG') return 'img';
+    if(isTextBlock(el)) return 'text';
+    return 'block';
+  }
+  /* The chain from <body> down to this element, so any container that wraps
+     what you clicked can be picked from the panel. */
+  function crumbsFor(el){
+    const out = [];
+    let n = el;
+    while(n && n.nodeType === 1 && n !== document.documentElement){
+      out.unshift({path:pathOf(n), label:tagLabel(n)});
+      n = n.parentElement;
+    }
+    return out.slice(-8);
+  }
   function targetFor(node){
     let el = node;
     while(el && el.nodeType!==1) el = el.parentNode;
+    let block = null;
     while(el && el !== document.documentElement){
       if(inj(el)) return null;
       if(el.tagName === 'IMG') return {el, kind:'img', key:'img:'+pathOf(el), label:'image'};
       if(isTextBlock(el)) return {el, kind:'text', path:pathOf(el), label:'text · <'+el.tagName.toLowerCase()+'>'};
       const bg = bgUrlIndex(el);
       if(bg) return {el, kind:bg.kind, key:bg.key, url:bg.url, label:'background image'};
+      /* Remember the innermost plain container, so clicking the padding of a
+         card stack selects the stack instead of finding nothing. */
+      if(!block && el !== document.body) block = el;
       el = el.parentElement;
     }
-    return null;
+    return block ? {el:block, kind:'block', label:'block · ' + tagLabel(block)} : null;
   }
 
   /* ---- hover outline ---- */
@@ -1534,6 +1644,10 @@ function PREVIEW_AGENT(){
   addEventListener('keydown',(e)=>{
     if(!editing){
       if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z'){ e.preventDefault(); send({t:'undo'}); }
+      if(sel && /^Arrow(Up|Down|Left|Right)$/.test(e.key)){
+        e.preventDefault();
+        send({t:'nudgeKey', dir:e.key.slice(5).toLowerCase(), shift:e.shiftKey, path:pathOf(sel.el)});
+      }
       return;
     }
     if(e.key === 'Escape'){ e.preventDefault(); stopEdit(false); send({t:'cancelled'}); }
@@ -1553,6 +1667,7 @@ function PREVIEW_AGENT(){
     e.preventDefault(); e.stopPropagation();
     selectEl(t.el, t.kind);
     if(t.kind === 'text') startEdit(t);
+    else if(t.kind === 'block') send({t:'hintBlock'});
     else if(e.detail >= 2) send({t:'pick', key:t.key, kind:t.kind, url:t.url, path:pathOf(t.el)});
     else send({t:'hintPick', kind:t.kind});
   }, true);
@@ -1571,10 +1686,21 @@ function PREVIEW_AGENT(){
     return h;
   }
   const hCorner = mkHandle('corner'), hBottom = mkHandle('bottom');
+  const selBox = document.createElement('div');
+  selBox.setAttribute('data-vse',''); selBox.setAttribute('data-vse-selbox','');
+  selBox.style.display = 'none';
+  selBox.innerHTML = '<b data-vse></b>';
+  document.documentElement.appendChild(selBox);
 
   function placeHandles(){
-    if(!sel){ handles.forEach(h=>h.style.display='none'); return; }
+    if(!sel){ handles.forEach(h=>h.style.display='none'); selBox.style.display='none'; return; }
     const r = sel.el.getBoundingClientRect();
+    selBox.style.display = 'block';
+    selBox.style.left = (r.left + scrollX) + 'px';
+    selBox.style.top = (r.top + scrollY) + 'px';
+    selBox.style.width = r.width + 'px';
+    selBox.style.height = r.height + 'px';
+    selBox.firstChild.textContent = sel.label || tagLabel(sel.el);
     const corner = sel.kind === 'img';
     hCorner.style.display = corner ? 'block' : 'none';
     hBottom.style.display = corner ? 'none' : 'block';
@@ -1587,7 +1713,7 @@ function PREVIEW_AGENT(){
     }
   }
   function selectEl(el, kind){
-    sel = {el, kind};
+    sel = {el, kind, label:tagLabel(el)};
     placeHandles();
     let cs = {}; try{ cs = getComputedStyle(el); }catch(e){}
     /* Warn when a child overrides the colour: colouring the parent will not
@@ -1599,7 +1725,7 @@ function PREVIEW_AGENT(){
         if(cc && cc !== cs.color){ conflict = c.tagName.toLowerCase() + (c.className ? '.' + String(c.className).split(/\s+/)[0] : ''); break; }
       }catch(e){}
     }
-    send({t:'select', path:pathOf(el), kind, tag:el.tagName.toLowerCase(),
+    send({t:'select', path:pathOf(el), kind, tag:el.tagName.toLowerCase(), crumbs:crumbsFor(el),
           cls:(el.getAttribute('class')||'').split(/\s+/)[0] || '',
           color:cs.color || '', fontSize:cs.fontSize || '',
           width:Math.round(el.getBoundingClientRect().width),
@@ -1636,6 +1762,64 @@ function PREVIEW_AGENT(){
     if(drag.out && sel) send({t:'style', path:pathOf(sel.el), decls:drag.out});
     drag = null;
   }, true);
+
+  /* ---- spacing nudges ----
+     Every value is measured from what the browser is currently using, so a
+     nudge is always relative to the page's own spacing rather than to zero. */
+  function prevEl(el){
+    let n = el.previousElementSibling;
+    while(n && inj(n)) n = n.previousElementSibling;
+    return n;
+  }
+  function px(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
+  function isCentred(el){
+    try{
+      const cs = getComputedStyle(el);
+      const l = px(cs.marginLeft), r = px(cs.marginRight);
+      return l > 4 && Math.abs(l - r) < 1.5;
+    }catch(e){ return false; }
+  }
+  function computeNudge(m){
+    const el = resolvePath(m.path || '');
+    if(!el) return send({t:'nudgeFail', msg:'That element is no longer on the page.'});
+    if(m.mode === 'gap'){
+      const prev = prevEl(el);
+      if(!prev) return send({t:'nudgeFail', msg:'Nothing sits above this element, so there is no gap to close.'});
+      const csA = getComputedStyle(prev), csB = getComputedStyle(el);
+      const mb = px(csA.marginBottom), mt = px(csB.marginTop);
+      let flexy = false;
+      try{ flexy = /flex|grid/.test(getComputedStyle(el.parentElement || document.body).display); }catch(e){}
+      const visual = el.getBoundingClientRect().top - prev.getBoundingClientRect().bottom;
+      /* When margins collapse the gap is the larger of the two, so nudging
+         the smaller one would do nothing. Move whichever one is winning. */
+      const collapsing = !flexy && Math.abs(visual - Math.max(mb, mt)) < 1.5 && Math.abs((mb + mt) - visual) > 1.5;
+      if(collapsing && mb > mt){
+        return send({t:'nudged', items:[{path:pathOf(prev), prop:'margin-bottom', value:(mb + m.step) + 'px'}],
+                     note:'closed from the element above, because its margin was setting the gap'});
+      }
+      return send({t:'nudged', items:[{path:m.path, prop:'margin-top', value:(mt + m.step) + 'px'}]});
+    }
+    if((m.prop === 'margin-left') && isCentred(el))
+      return send({t:'nudgeFail', msg:'This element is centred by its own margins. Moving it sideways would break that.'});
+    const cs = getComputedStyle(el);
+    const cur = px(m.prop === 'margin-top' ? cs.marginTop : m.prop === 'margin-bottom' ? cs.marginBottom : cs.marginLeft);
+    send({t:'nudged', items:[{path:m.path, prop:m.prop, value:(cur + m.step) + 'px'}]});
+  }
+  /* Report what the browser actually ended up using, so the app can tell
+     when a page rule has beaten a nudge instead of failing silently. */
+  function checkNudges(){
+    const want = (CFG.check || []);
+    if(!want.length) return [];
+    const out = [];
+    for(const w of want){
+      const el = resolvePath(w.path);
+      if(!el) continue;
+      const cs = getComputedStyle(el);
+      const got = px(w.prop === 'margin-top' ? cs.marginTop : w.prop === 'margin-bottom' ? cs.marginBottom : cs.marginLeft);
+      out.push({path:w.path, prop:w.prop, got});
+    }
+    return out;
+  }
 
   /* ---- broken images get a visible target so they can still be replaced ---- */
   function markBroken(){
@@ -1705,7 +1889,7 @@ function PREVIEW_AGENT(){
 
   function report(){
     markBroken();
-    send({t:'ready', h:document.documentElement.scrollHeight, imgs:document.images.length});
+    send({t:'ready', h:document.documentElement.scrollHeight, imgs:document.images.length, nudgeCheck:checkNudges()});
   }
 
   addEventListener('message',(e)=>{
@@ -1730,6 +1914,14 @@ function PREVIEW_AGENT(){
       send({t:'edit', path:editing.path, html:editing.el.innerHTML});
       editing.orig = editing.el.innerHTML;
     }
+    else if(m.t === 'selectPath'){
+      const el = resolvePath(m.path || '');
+      if(!el) return send({t:'nudgeFail', msg:'That element is no longer on the page.'});
+      if(editing) stopEdit(true);
+      selectEl(el, kindOf(el));
+      el.scrollIntoView({block:'nearest', behavior:'smooth'});
+    }
+    else if(m.t === 'nudge') computeNudge(m);
     else if(m.t === 'deselect'){ sel = null; placeHandles(); }
     else if(m.t === 'reveal'){
       const el = resolvePath(m.path||'');
@@ -1845,7 +2037,8 @@ function fail(msg, e){ log(msg + (e ? ' — ' + (e.message||e) : ''), 'err'); }
 function snapshot(){
   if(!S.project) return;
   S.undo.push(JSON.stringify({edits:S.project.edits, images:S.project.images, colors:S.project.colors,
-                              styles:S.project.styles, head:S.project.head, form:S.project.form}));
+                              styles:S.project.styles, head:S.project.head, form:S.project.form,
+                              nudges:S.project.nudges, nudgeSeq:S.project.nudgeSeq}));
   if(S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;
   S.dirty = true;
@@ -1856,6 +2049,7 @@ function undo(){
   const prev = JSON.parse(S.undo.pop());
   S.project.edits = prev.edits; S.project.images = prev.images; S.project.colors = prev.colors;
   S.project.styles = prev.styles; S.project.head = prev.head; S.project.form = prev.form;
+  S.project.nudges = prev.nudges; S.project.nudgeSeq = prev.nudgeSeq;
   $('#btnUndo').disabled = !S.undo.length;
   rebuild(true);
   log('Undo — ' + S.undo.length + ' step' + (S.undo.length===1?'':'s') + ' left');
@@ -1881,7 +2075,8 @@ function newProject(html, name){
     createdAt: Date.now(), updatedAt: Date.now(),
     originalHtml: html,
     edits:Object.create(null), images:Object.create(null), colors:Object.create(null),
-    styles:Object.create(null), assets:Object.create(null),
+    styles:Object.create(null), nudges:Object.create(null), nudgeSeq:0,
+    assets:Object.create(null),
     head:blankHead(), form:blankForm()
   };
 }
@@ -1937,6 +2132,8 @@ function openProjectData(p){
     S.project = p;
     S.project.edits = p.edits || {}; S.project.images = p.images || {}; S.project.colors = p.colors || {};
     S.project.styles = p.styles || Object.create(null);
+    S.project.nudges = p.nudges || Object.create(null);
+    S.project.nudgeSeq = p.nudgeSeq || Object.keys(S.project.nudges).length;
     S.project.head = Object.assign(blankHead(), p.head || {});
     S.project.head.biz = Object.assign(blankHead().biz, (p.head && p.head.biz) || {});
     S.project.form = Object.assign(blankForm(), p.form || {});
@@ -1976,7 +2173,7 @@ function rebuild(reloadPreview){
       try{ pv.contentWindow.postMessage({t:'scrollTo', y:S.scrollY}, '*'); }catch(e){}
       if($('#findInput').value) sendPv({t:'find', q:$('#findInput').value});
     };
-    pv.srcdoc = previewHtml(r.html, {});
+    pv.srcdoc = previewHtml(r.html, {check: S.pendingCheck || []});
   }
   return r;
 }
@@ -2070,6 +2267,52 @@ function renderColors(r){
   }
 }
 
+/* Which rule block the current preview width writes into. */
+function vpBucket(){ return S.vp === 390 ? 'phone' : S.vp === 768 ? 'tablet' : 'desktop'; }
+const BUCKET_LABEL = {desktop:'desktop (the base rule)', tablet:'tablet and below (max-width 1024)', phone:'phones (max-width 640)'};
+
+/* What the cascade should be producing right now for this element. */
+function effectiveNudge(rec, prop){
+  const order = {desktop:['desktop'], tablet:['tablet','desktop'], phone:['phone','tablet','desktop']}[vpBucket()];
+  for(const b of order){ const v = (rec[b] || {})[prop]; if(v != null) return v; }
+  return null;
+}
+function nudgeRecord(path){
+  let rec = S.project.nudges[path];
+  if(!rec){
+    S.project.nudgeSeq = (S.project.nudgeSeq || 0) + 1;
+    rec = S.project.nudges[path] = {id:'n' + S.project.nudgeSeq, desktop:{}, tablet:{}, phone:{}};
+  }
+  for(const b of NUDGE_BUCKETS) if(!rec[b]) rec[b] = {};
+  return rec;
+}
+function applyNudgeItems(items, note){
+  snapshot();
+  const bucket = vpBucket();
+  const said = [];
+  for(const it of items){
+    const rec = nudgeRecord(it.path);
+    rec[bucket][it.prop] = it.value;
+    said.push(rec.id + ' ' + it.prop + ' ' + it.value);
+  }
+  S.pendingCheck = items.map(i=>({path:i.path, prop:i.prop, value:parseFloat(i.value)}));
+  log('Nudged on ' + BUCKET_LABEL[bucket] + ' — ' + said.join(', ') + (note ? ' (' + note + ')' : ''), 'ok');
+  rebuild(true);
+  renderElement();
+}
+function nudgeStep(shift){ return shift ? 8 : 4; }
+function doNudge(mode, prop, sign, shift){
+  if(!S.sel) return;
+  sendPv({t:'nudge', mode, prop, path:S.sel.path, step: sign * nudgeStep(shift)});
+}
+function clearNudge(path){
+  if(!S.project.nudges[path]) return;
+  snapshot();
+  delete S.project.nudges[path];
+  log('Cleared the spacing adjustments on ' + path);
+  rebuild(true); renderElement();
+}
+
 function renderElement(){
   const box = $('#elBody'); box.innerHTML = '';
   const sel = S.sel;
@@ -2091,6 +2334,29 @@ function renderElement(){
   head.children[1].append(el('div','nm', '<' + sel.tag + '>' + (sel.cls ? '.' + sel.cls : '')),
                           el('div','sub', sel.path + ' · ' + sel.width + '×' + sel.height + ' px'));
   box.append(head);
+
+  /* Walk outwards to the box that wraps this, which is usually what you
+     actually want to move. */
+  const crumbs = sel.crumbs || [];
+  if(crumbs.length){
+    box.append(el('div','lbl','Inside'));
+    const trail = el('div','crumbs');
+    crumbs.forEach((c, i)=>{
+      if(i) trail.append(el('span','sep','›'));
+      const b = el('button','crumb' + (c.path === sel.path ? ' on' : ''), c.label);
+      b.title = c.path === sel.path ? 'This is what is selected' : 'Select this instead';
+      b.onclick = ()=> sendPv({t:'selectPath', path:c.path});
+      trail.append(b);
+    });
+    box.append(trail);
+    const up = crumbs[crumbs.length - 2];
+    const upRow = el('div','row');
+    const upBtn = el('button','mini', up ? 'Select the box around this (' + up.label + ')' : 'Nothing wraps this');
+    upBtn.disabled = !up;
+    upBtn.onclick = ()=> sendPv({t:'selectPath', path:up.path});
+    upRow.append(upBtn);
+    box.append(upRow);
+  }
 
   /* --- colour --- */
   box.append(el('div','lbl','Text colour'));
@@ -2139,6 +2405,63 @@ function renderElement(){
     box.append(el('div','hint','Or drag the bar at the bottom edge.'));
   }
 
+  /* --- spacing nudge --- */
+  box.append(el('div','hr'));
+  const nh = el('div','lbl','Spacing · writing to ' + BUCKET_LABEL[vpBucket()]);
+  box.append(nh);
+  box.append(el('div','hint','Arrow keys work too. Hold Shift for 8px steps instead of 4px.'));
+
+  const pad = el('div','nudgepad');
+  const mk = (label, title, fn, cls)=>{
+    const b = el('button','nbtn' + (cls ? ' ' + cls : ''), label);
+    b.title = title;
+    b.onclick = (e)=> fn(e.shiftKey);
+    return b;
+  };
+  pad.append(el('span'), mk('↑','Move up (less margin above)', (sh)=>doNudge('element','margin-top',-1,sh)), el('span'));
+  pad.append(mk('←','Move left', (sh)=>doNudge('element','margin-left',-1,sh)),
+             mk('⟲','Reset this element\u2019s spacing', ()=> clearNudge(S.sel.path), 'reset'),
+             mk('→','Move right', (sh)=>doNudge('element','margin-left',1,sh)));
+  pad.append(el('span'), mk('↓','Move down (more margin above)', (sh)=>doNudge('element','margin-top',1,sh)), el('span'));
+  box.append(pad);
+
+  const gaps = el('div','row');
+  gaps.append(el('span','sub','Gap above'));
+  gaps.append(mk('−','Close the gap between this and the element above', (sh)=>doNudge('gap','',-1,sh)));
+  gaps.append(mk('+','Open the gap between this and the element above', (sh)=>doNudge('gap','',1,sh)));
+  gaps.append(el('span','sub','Space below'));
+  gaps.append(mk('−','Less space below', (sh)=>doNudge('element','margin-bottom',-1,sh)));
+  gaps.append(mk('+','More space below', (sh)=>doNudge('element','margin-bottom',1,sh)));
+  box.append(gaps);
+
+  const rec = S.project.nudges[sel.path];
+  if(rec){
+    const tbl = el('div');
+    for(const b of NUDGE_BUCKETS){
+      const decls = rec[b] || {};
+      const keys = Object.keys(decls);
+      if(!keys.length) continue;
+      const line = el('div','sub', (b === 'desktop' ? 'desktop' : b) + ': ' + keys.map(k=>k.replace('margin-','') + ' ' + decls[k]).join(', ')
+                     + (b === vpBucket() ? '  ← editing' : ''));
+      if(b === vpBucket()) line.style.color = 'var(--marking)';
+      tbl.append(line);
+    }
+    if(rec.important) tbl.append(el('div','sub','marked !important, because the page\u2019s own CSS was overriding it'));
+    tbl.append(el('div','sub','selector: [data-nudge="' + rec.id + '"]'));
+    box.append(tbl);
+  }
+  const nudgeCount = Object.keys(S.project.nudges).length;
+  if(nudgeCount){
+    const rowAll = el('div','row');
+    const all = el('button','mini','Remove all ' + nudgeCount + ' spacing adjustment' + (nudgeCount===1?'':'s'));
+    all.onclick = ()=>{
+      if(!confirm('Remove every spacing adjustment on this page?')) return;
+      snapshot(); S.project.nudges = Object.create(null);
+      log('Removed every spacing adjustment', 'warn'); rebuild(true); renderElement();
+    };
+    rowAll.append(all); box.append(rowAll);
+  }
+
   if(Object.keys(over).length){
     box.append(el('div','hr'));
     box.append(el('div','lbl','Changes here'));
@@ -2184,6 +2507,9 @@ addEventListener('message', (e)=>{
   else if(m.t === 'select'){ S.sel = m; renderElement(); }
   else if(m.t === 'selRange'){ S.hasRange = m.has; const b = $('#btnColorSel'); if(b) b.disabled = !m.has; }
   else if(m.t === 'noSelection'){ log('Select some words first, then apply the colour.', 'warn'); }
+  else if(m.t === 'hintBlock'){
+    if(!S.hintedBlock){ S.hintedBlock = true; log('Container selected. Use the arrows to move it, or the trail in the Element panel to step further out.'); }
+  }
   else if(m.t === 'hintPick'){
     if(!S.hintedPick){ S.hintedPick = true; log('Drag the handle to resize. Double-click the image to swap it.'); }
   }
@@ -2194,12 +2520,22 @@ addEventListener('message', (e)=>{
     log('Resized ' + m.path + ' — ' + Object.entries(m.decls).map(([k,v])=>k+':'+v).join(', '), 'ok');
     rebuild(false);              // the preview already shows the new size
   }
+  else if(m.t === 'nudged'){ applyNudgeItems(m.items, m.note); }
+  else if(m.t === 'nudgeFail'){ log(m.msg, 'warn'); }
+  else if(m.t === 'nudgeKey'){
+    const map = {up:['margin-top',-1], down:['margin-top',1], left:['margin-left',-1], right:['margin-left',1]};
+    const [prop, sign] = map[m.dir] || [];
+    if(prop) doNudge('element', prop, sign, m.shift);
+  }
   else if(m.t === 'scroll'){ S.scrollY = m.y; }
   else if(m.t === 'find'){ S.findN = m.n; S.findI = m.i; $('#findCnt').textContent = m.n ? (m.i + '/' + m.n) : ($('#findInput').value ? 'none' : ''); }
   else if(m.t === 'undo'){ undo(); }
   else if(m.t === 'editing'){ $('#editChip').lastElementChild.textContent = 'editing — Esc cancels'; $('#editChip').className='chip warn'; }
   else if(m.t === 'cancelled'){ $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip'; }
-  else if(m.t === 'ready'){ $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip'; }
+  else if(m.t === 'ready'){
+    $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip';
+    verifyNudges(m.nudgeCheck || []);
+  }
 });
 
 /* ==========================================================================
@@ -2251,6 +2587,27 @@ function finishAsset(mime, bytes, name, w, h, note){
   if(!S.assets[hash]) S.assets[hash] = {mime, b64:U.bytesToB64(bytes), bytes:bytes.length, w, h, name, from:'upload'};
   else S.assets[hash].from = 'upload';
   return {hash, note, bytes:bytes.length, name};
+}
+
+/* A nudge that the page's own CSS silently overrides is worse than no nudge
+   at all, so check what the browser actually used and escalate once. */
+function verifyNudges(report){
+  const pending = S.pendingCheck; S.pendingCheck = null;
+  if(!pending || !report.length || !S.project) return;
+  let escalated = 0, stuck = [];
+  for(const want of pending){
+    const got = report.find(r=>r.path === want.path && r.prop === want.prop);
+    if(!got || Math.abs(got.got - want.value) < 0.6) continue;
+    const rec = S.project.nudges[want.path];
+    if(!rec) continue;
+    if(rec.important){ stuck.push(rec.id + ' ' + want.prop); continue; }
+    rec.important = true; escalated++;
+  }
+  if(escalated){
+    log('The page\u2019s own CSS was overriding ' + escalated + ' adjustment' + (escalated===1?'':'s') + ', so !important was added to keep it. Check the generated block if that looks wrong.', 'warn');
+    rebuild(true);
+  }
+  for(const sname of stuck) fail('Spacing adjustment ' + sname + ' is still being overridden even with !important — an inline style or an id rule on the page is winning.');
 }
 
 /* ==========================================================================
@@ -2536,6 +2893,7 @@ function projectForSave(){
     v:1, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
     originalHtml:p.originalHtml,
     edits:p.edits, images:p.images, colors:p.colors, styles:p.styles,
+    nudges:p.nudges, nudgeSeq:p.nudgeSeq,
     head:p.head, form:p.form, assets
     /* srcIndex is derived from originalHtml, so it is never written out */
   };
@@ -2725,6 +3083,12 @@ addEventListener('keydown', (e)=>{
   if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); undo(); }
   else if((e.ctrlKey||e.metaKey) && k==='s'){ e.preventDefault(); $('#btnSave').click(); }
   else if((e.ctrlKey||e.metaKey) && k==='f'){ e.preventDefault(); $('#findInput').focus(); $('#findInput').select(); }
+  else if(S.sel && /^arrow(up|down|left|right)$/.test(k) && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName||''))){
+    e.preventDefault();
+    const map = {arrowup:['margin-top',-1], arrowdown:['margin-top',1], arrowleft:['margin-left',-1], arrowright:['margin-left',1]};
+    const [prop, sign] = map[k];
+    doNudge('element', prop, sign, e.shiftKey);
+  }
   else if(k==='escape'){ $$('.modal.on').forEach(m=>m.classList.remove('on')); }
 });
 addEventListener('beforeunload', (e)=>{ if(S.dirty){ e.preventDefault(); e.returnValue=''; } });
@@ -3007,6 +3371,109 @@ function runTests(){
       if(d1.length !== d2.length) throw new Error('line count changed');
       if(changed !== 1) throw new Error(changed + ' lines changed');
       return 'exactly 1 line differs';
+    });
+    T('A container can be nudged, not just the text inside it', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const section = doc.querySelector('section.grid');
+      const inner = doc.querySelector('.cap');
+      p.nudges[pathOf(section)] = {id:'n1', desktop:{'margin-top':'-16px'}, tablet:{}, phone:{}};
+      const html = build(p, S.assets, 'single').html;
+      if(!/<section class="grid" data-nudge="n1">/.test(html)) throw new Error('container not marked');
+      if(/<span class="cap" data-nudge/.test(html)) throw new Error('the nudge leaked onto a child');
+      /* moving the wrapper must not disturb anything inside it */
+      if(!/<b class="badge">Alvarez<\/b> Roofing/.test(html)) throw new Error('contents changed');
+      return 'the whole block moves, its contents are untouched';
+    });
+    T('The path chain used by the panel resolves at every level', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      let n = doc.querySelector('.cap'), levels = 0;
+      while(n && n !== doc.documentElement){
+        const path = pathOf(n);
+        if(resolvePath(doc.documentElement, path) !== n) throw new Error('path ' + path + ' resolves elsewhere');
+        levels++; n = n.parentElement;
+      }
+      if(levels < 4) throw new Error('expected a deeper chain, got ' + levels);
+      return levels + ' ancestors, every one addressable';
+    });
+    T('Nudges write one stylesheet block, never an inline style', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const h1 = doc.querySelector('h1');
+      p.nudges[pathOf(h1)] = {id:'n1', desktop:{'margin-top':'-24px'}, tablet:{}, phone:{'margin-top':'-8px'}};
+      const html = build(p, S.assets, 'single').html;
+      if(!/<h1 data-nudge="n1">/.test(html)) throw new Error('attribute not applied');
+      if(/<h1[^>]*style=/.test(html)) throw new Error('an inline style was written');
+      if(!/\[data-nudge="n1"\]\[data-nudge\]\{margin-top:-24px\}/.test(html)) throw new Error('base rule missing');
+      if(!/@media \(max-width: 640px\) \{\n  \[data-nudge="n1"\]\[data-nudge\]\{margin-top:-8px\}/.test(html)) throw new Error('phone rule missing or misplaced');
+      if((html.match(/data-nudge-block/g)||[]).length !== 1) throw new Error('more than one generated block');
+      return 'one block, base + phone rule, no inline style';
+    });
+    T('The phone rule comes after the tablet rule so it wins', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      p.nudges[pathOf(doc.querySelector('h1'))] =
+        {id:'n1', desktop:{'margin-top':'40px'}, tablet:{'margin-top':'20px'}, phone:{'margin-top':'4px'}};
+      const css = build(p, S.assets, 'single').nudgeCss;
+      const t = css.indexOf('max-width: 1024px'), ph = css.indexOf('max-width: 640px');
+      if(t < 0 || ph < 0) throw new Error('a breakpoint is missing');
+      if(ph < t) throw new Error('the phone block comes before the tablet block');
+      if(css.indexOf('margin-top:40px') > t) throw new Error('the base rule is not first');
+      return 'base, then 1024, then 640';
+    });
+    T('Several nudged elements share one block and keep their own ids', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      p.nudges[pathOf(doc.querySelector('h1'))] = {id:'n1', desktop:{'margin-top':'-24px'}, tablet:{}, phone:{}};
+      p.nudges[pathOf(doc.querySelector('.cap'))] = {id:'n2', desktop:{'margin-bottom':'12px','margin-left':'8px'}, tablet:{}, phone:{}};
+      const r = build(p, S.assets, 'single');
+      if((r.html.match(/<style data-nudge-block/g)||[]).length !== 1) throw new Error('not one block');
+      if(!/\[data-nudge="n2"\]\[data-nudge\]\{margin-bottom:12px;margin-left:8px\}/.test(r.html)) throw new Error('second rule wrong: ' + r.nudgeCss);
+      const twice = build(p, S.assets, 'single');
+      if(twice.html !== r.html) throw new Error('not deterministic');
+      return 'n1 and n2 in one block, byte-identical on rebuild';
+    });
+    T('!important is only written once the editor has seen an override', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      const path = pathOf(doc.querySelector('h1'));
+      p.nudges[path] = {id:'n1', desktop:{'margin-top':'-24px'}, tablet:{}, phone:{}};
+      if(/!important/.test(build(p, S.assets, 'single').html)) throw new Error('written unprompted');
+      p.nudges[path].important = true;
+      if(!/margin-top:-24px !important/.test(build(p, S.assets, 'single').html)) throw new Error('not written when asked');
+      return 'off by default, on when a page rule wins';
+    });
+    T('A nudge whose element vanished is reported, not dropped', ()=>{
+      const p = P();
+      p.nudges['6.6.6'] = {id:'n9', desktop:{'margin-top':'-8px'}, tablet:{}, phone:{}};
+      const r = build(p, S.assets, 'single');
+      if(!r.problems.some(x=>x.kind==='nudge')) throw new Error('not reported');
+      if(/data-nudge="n9"/.test(r.html)) throw new Error('a rule was written for a missing element');
+      return 'reported by id';
+    });
+    T('Removing a nudge leaves the page byte-identical to before', ()=>{
+      const p = P();
+      const before = build(p, S.assets, 'single').html;
+      const doc = Model.parse(p.originalHtml);
+      const path = pathOf(doc.querySelector('h1'));
+      p.nudges[path] = {id:'n1', desktop:{'margin-top':'-24px'}, tablet:{}, phone:{}};
+      if(build(p, S.assets, 'single').html === before) throw new Error('the nudge did nothing');
+      delete p.nudges[path];
+      if(build(p, S.assets, 'single').html !== before) throw new Error('something was left behind');
+      return 'no attribute, no block, no residue';
+    });
+    T('Nudges survive a save and reopen', ()=>{
+      const p = P();
+      const doc = Model.parse(p.originalHtml);
+      p.nudges[pathOf(doc.querySelector('h1'))] = {id:'n1', desktop:{'margin-top':'-24px'}, tablet:{}, phone:{'margin-top':'-8px'}};
+      p.nudgeSeq = 1;
+      const round = JSON.parse(JSON.stringify(p));
+      indexSource(round);
+      const r = build(round, S.assets, 'single');
+      if(r.problems.length) throw new Error(r.problems[0].msg);
+      if(!/margin-top:-8px/.test(r.html)) throw new Error('the phone value was lost');
+      return 'both values restored, path still resolves';
     });
     T('SEO tags are created when absent and updated when present', ()=>{
       const p = P();

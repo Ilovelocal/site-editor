@@ -382,7 +382,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <button class="mini" id="findNext" title="Next match">↓</button>
         </div>
         <span class="spacer"></span>
-        <span class="chip" id="editChip"><i class="dot"></i><span>click to edit</span></span>
+        <span class="chip" id="editChip"><i class="dot"></i><span>click to edit, ⇕ to move</span></span>
       </div>
       <div class="stage" id="stage">
         <div class="dim"><b id="dimTxt">—</b></div>
@@ -1489,6 +1489,11 @@ const AGENT_CSS = `
   border:2px solid #DE521C!important;box-sizing:border-box!important;touch-action:none!important}
 [data-vse-handle="corner"]{width:14px!important;height:14px!important;border-radius:50%!important;cursor:nwse-resize!important}
 [data-vse-handle="bottom"]{width:32px!important;height:10px!important;border-radius:5px!important;cursor:ns-resize!important}
+[data-vse-handle="move"]{width:26px!important;height:20px!important;border-radius:3px!important;cursor:grab!important;
+  background:#DE521C!important;border-color:#DE521C!important;color:#fff!important;
+  font:12px/18px ui-monospace,Menlo,monospace!important;text-align:center!important;
+  display:none;user-select:none!important}
+[data-vse-handle="move"]:active{cursor:grabbing!important}
 [data-vse-editing]{outline:2px solid #DE521C!important;outline-offset:2px!important;background:rgba(255,255,255,.55)!important}
 `;
 
@@ -1656,6 +1661,7 @@ function PREVIEW_AGENT(){
   addEventListener('focusout',(e)=>{ if(editing && e.target===editing.el) stopEdit(true); }, true);
 
   addEventListener('click',(e)=>{
+    if(justDragged){ e.preventDefault(); e.stopPropagation(); return; }
     const a = e.target.closest && e.target.closest('a[href]');
     if(a) e.preventDefault();                       // never navigate away from the preview
     if(editing){
@@ -1682,10 +1688,12 @@ function PREVIEW_AGENT(){
     h.style.display = 'none';
     document.documentElement.appendChild(h);
     handles.push(h);
-    h.addEventListener('pointerdown', (e)=> startDrag(e, kind, h), true);
+    h.addEventListener('pointerdown', (e)=> kind === 'move' ? beginMove(e) : startDrag(e, kind, h), true);
     return h;
   }
-  const hCorner = mkHandle('corner'), hBottom = mkHandle('bottom');
+  const hCorner = mkHandle('corner'), hBottom = mkHandle('bottom'), hMove = mkHandle('move');
+  hMove.textContent = '\u21d5';
+  hMove.title = 'Hold and drag to move this up or down';
   const selBox = document.createElement('div');
   selBox.setAttribute('data-vse',''); selBox.setAttribute('data-vse-selbox','');
   selBox.style.display = 'none';
@@ -1695,6 +1703,12 @@ function PREVIEW_AGENT(){
   function placeHandles(){
     if(!sel){ handles.forEach(h=>h.style.display='none'); selBox.style.display='none'; return; }
     const r = sel.el.getBoundingClientRect();
+    /* The grab handle sits just outside the top-left corner, or just inside it
+       when the element is against the top of the window. */
+    hMove.style.display = 'block';
+    const above = r.top > 26;
+    hMove.style.left = (r.left + scrollX) + 'px';
+    hMove.style.top = (r.top + scrollY + (above ? -23 : 3)) + 'px';
     selBox.style.display = 'block';
     selBox.style.left = (r.left + scrollX) + 'px';
     selBox.style.top = (r.top + scrollY) + 'px';
@@ -1703,7 +1717,9 @@ function PREVIEW_AGENT(){
     selBox.firstChild.textContent = sel.label || tagLabel(sel.el);
     const corner = sel.kind === 'img';
     hCorner.style.display = corner ? 'block' : 'none';
-    hBottom.style.display = corner ? 'none' : 'block';
+    /* No height grip on a paragraph — resizing text by its box is never what
+       you want, and it would sit right where you are trying to read. */
+    hBottom.style.display = (!corner && sel.kind !== 'text') ? 'block' : 'none';
     if(corner){
       hCorner.style.left = (r.right + scrollX - 7) + 'px';
       hCorner.style.top  = (r.bottom + scrollY - 7) + 'px';
@@ -1779,32 +1795,199 @@ function PREVIEW_AGENT(){
       return l > 4 && Math.abs(l - r) < 1.5;
     }catch(e){ return false; }
   }
+  function nextEl(el){
+    let n = el.nextElementSibling;
+    while(n && inj(n)) n = n.nextElementSibling;
+    return n;
+  }
+  /* Try a change, measure whether the element actually moved, put things back.
+     A margin does not always shift a box: it can collapse with the element
+     above, collapse out through the parent, or be swallowed by a grid or flex
+     row. Rather than guess from the computed styles, each candidate is applied
+     for one frame and measured. Only one that genuinely moves is kept. */
+  function trial(node, prop, value, measure, want){
+    const before = measure();
+    const had = node.style.getPropertyValue(prop);
+    const prio = node.style.getPropertyPriority(prop);
+    node.style.setProperty(prop, value + 'px', 'important');
+    const moved = measure() - before;
+    node.style.removeProperty(prop);
+    if(had) node.style.setProperty(prop, had, prio);
+    return Math.abs(moved - want) < 1.5;
+  }
+  function baseOf(node, prop){
+    const cs = getComputedStyle(node);
+    return px(prop === 'margin-top' ? cs.marginTop : prop === 'margin-bottom' ? cs.marginBottom :
+              prop === 'margin-left' ? cs.marginLeft : prop === 'padding-top' ? cs.paddingTop :
+              prop === 'padding-bottom' ? cs.paddingBottom : cs.paddingLeft);
+  }
+  /* Everything that could plausibly shift this element, innermost first, then
+     climbing outwards. When the element itself is pinned by a grid or flex
+     row, moving the box around it is the answer — so that is on the list
+     rather than being a dead end you have to work out yourself. */
+  function candidatesFor(el, axis, preferSibling){
+    const out = [];
+    const add = (node, prop, rel)=>{ if(node && node.nodeType === 1) out.push({node, prop, rel, base:baseOf(node, prop)}); };
+    if(axis === 'below'){
+      add(el, 'margin-bottom', 'self');
+      add(nextEl(el), 'margin-top', 'below');
+      add(el.parentElement, 'padding-bottom', 'parentpad');
+      return out;
+    }
+    let n = el, depth = 0;
+    while(n && n !== document.body && n !== document.documentElement && depth < 4){
+      if(axis === 'x'){
+        add(n, 'margin-left', n === el ? 'self' : 'ancestor');
+        add(n.parentElement, 'padding-left', 'parentpad');
+      }else{
+        const own = ()=> add(n, 'margin-top', n === el ? 'self' : 'ancestor');
+        const sib = ()=>{ const pv = prevEl(n); if(pv) add(pv, 'margin-bottom', 'above'); };
+        if(preferSibling && depth === 0){ sib(); own(); } else { own(); sib(); }
+        add(n.parentElement, 'padding-top', 'parentpad');
+      }
+      n = n.parentElement; depth++;
+    }
+    return out;
+  }
+  function measureFor(el, axis){
+    if(axis === 'x') return ()=> el.getBoundingClientRect().left + scrollX;
+    if(axis === 'below'){
+      const nx = nextEl(el), par = el.parentElement;
+      if(nx) return ()=> nx.getBoundingClientRect().top + scrollY;
+      if(par) return ()=> par.getBoundingClientRect().bottom + scrollY;
+      return null;
+    }
+    return ()=> el.getBoundingClientRect().top + scrollY;
+  }
+  function knobNote(c){
+    if(c.rel === 'self') return '';
+    if(c.rel === 'above') return 'using the margin under ' + tagLabel(c.node) + ' above it, which was setting the gap';
+    if(c.rel === 'below') return 'using the margin above ' + tagLabel(c.node) + ' below it';
+    if(c.rel === 'parentpad') return 'as padding on ' + tagLabel(c.node) + ', so everything inside it moved together';
+    return 'by moving ' + tagLabel(c.node) + ' around it, because the element itself is pinned by its container';
+  }
+  /* Find the one knob that actually shifts this element in this direction. */
+  function findKnob(el, axis, probe){
+    const measure = measureFor(el, axis);
+    if(!measure) return null;
+    for(const c of candidatesFor(el, axis, false)){
+      const v = c.base + probe;
+      if(v < 0 && /^padding/.test(c.prop)) continue;
+      if(trial(c.node, c.prop, v, measure, probe)) return c;
+    }
+    return null;
+  }
+  const NO_MOVE = 'Nothing here can move that, even the boxes around it. It is probably pinned by a fixed height or absolute positioning.';
+
   function computeNudge(m){
     const el = resolvePath(m.path || '');
     if(!el) return send({t:'nudgeFail', msg:'That element is no longer on the page.'});
-    if(m.mode === 'gap'){
-      const prev = prevEl(el);
-      if(!prev) return send({t:'nudgeFail', msg:'Nothing sits above this element, so there is no gap to close.'});
-      const csA = getComputedStyle(prev), csB = getComputedStyle(el);
-      const mb = px(csA.marginBottom), mt = px(csB.marginTop);
-      let flexy = false;
-      try{ flexy = /flex|grid/.test(getComputedStyle(el.parentElement || document.body).display); }catch(e){}
-      const visual = el.getBoundingClientRect().top - prev.getBoundingClientRect().bottom;
-      /* When margins collapse the gap is the larger of the two, so nudging
-         the smaller one would do nothing. Move whichever one is winning. */
-      const collapsing = !flexy && Math.abs(visual - Math.max(mb, mt)) < 1.5 && Math.abs((mb + mt) - visual) > 1.5;
-      if(collapsing && mb > mt){
-        return send({t:'nudged', items:[{path:pathOf(prev), prop:'margin-bottom', value:(mb + m.step) + 'px'}],
-                     note:'closed from the element above, because its margin was setting the gap'});
-      }
-      return send({t:'nudged', items:[{path:m.path, prop:'margin-top', value:(mt + m.step) + 'px'}]});
-    }
-    if((m.prop === 'margin-left') && isCentred(el))
+    const axis = m.mode === 'gap' ? 'y'
+               : m.prop === 'margin-bottom' ? 'below'
+               : m.prop === 'margin-left' ? 'x' : 'y';
+    if(axis === 'x' && isCentred(el))
       return send({t:'nudgeFail', msg:'This element is centred by its own margins. Moving it sideways would break that.'});
-    const cs = getComputedStyle(el);
-    const cur = px(m.prop === 'margin-top' ? cs.marginTop : m.prop === 'margin-bottom' ? cs.marginBottom : cs.marginLeft);
-    send({t:'nudged', items:[{path:m.path, prop:m.prop, value:(cur + m.step) + 'px'}]});
+    const measure = measureFor(el, axis);
+    if(!measure) return send({t:'nudgeFail', msg:'Nothing follows this element, so there is no space below it to change.'});
+    for(const c of candidatesFor(el, axis, m.mode === 'gap')){
+      const v = c.base + m.step;
+      if(v < 0 && /^padding/.test(c.prop)) continue;
+      if(trial(c.node, c.prop, v, measure, m.step))
+        return send({t:'nudged', items:[{path:pathOf(c.node), prop:c.prop, value:v + 'px'}], note:knobNote(c)});
+    }
+    send({t:'nudgeFail', msg:NO_MOVE});
   }
+
+  /* ---- drag to move ----
+     Press and drag any element to shift it. The knob is worked out once, at
+     the moment the drag starts, and then held for the whole gesture so the
+     element does not change what it is doing halfway through. */
+  let press = null, moveDrag = null, justDragged = false;
+  let noSelect = null;
+  function stopSelecting(on){
+    if(on && !noSelect){
+      noSelect = document.createElement('style');
+      noSelect.setAttribute('data-vse','');
+      noSelect.textContent = '*{user-select:none !important;-webkit-user-select:none !important}';
+      document.documentElement.appendChild(noSelect);
+    }else if(!on && noSelect){ noSelect.remove(); noSelect = null; }
+  }
+  function resolveMove(dx, dy){
+    const el = moveDrag.el;
+    const axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
+    if(axis === 'x' && isCentred(el)){
+      send({t:'nudgeFail', msg:'This element is centred by its own margins. Moving it sideways would break that.'});
+      return false;
+    }
+    const probe = axis === 'y' ? (dy >= 0 ? 8 : -8) : (dx >= 0 ? 8 : -8);
+    const knob = findKnob(el, axis, probe) || findKnob(el, axis, -probe);
+    if(!knob){ send({t:'nudgeFail', msg:NO_MOVE}); return false; }
+    moveDrag.axis = axis; moveDrag.knob = knob; moveDrag.pending = false;
+    moveDrag.v = knob.base;
+    moveDrag.had = knob.node.style.getPropertyValue(knob.prop);
+    moveDrag.prio = knob.node.style.getPropertyPriority(knob.prop);
+    stopSelecting(true);
+    send({t:'dragging', note:knobNote(knob)});
+    return true;
+  }
+  /* Grabbing the handle works even while the text underneath is open for
+     editing, which is the whole point of having a handle. */
+  function beginMove(e){
+    if(!sel || drag) return;
+    e.preventDefault(); e.stopPropagation();
+    if(editing) stopEdit(true);
+    try{ e.target.setPointerCapture(e.pointerId); }catch(err){}
+    moveDrag = {pending:true, el:sel.el, x:e.clientX, y:e.clientY, d:0};
+  }
+  addEventListener('pointerdown', (e)=>{
+    if(drag || editing) return;
+    if(e.target && e.target.hasAttribute && e.target.hasAttribute('data-vse-handle')) return;
+    const t = targetFor(e.target);
+    if(!t) return;
+    press = {t, x:e.clientX, y:e.clientY};
+  }, true);
+  addEventListener('pointermove', (e)=>{
+    if(moveDrag){
+      if(moveDrag.pending){
+        const ax = e.clientX - moveDrag.x, ay = e.clientY - moveDrag.y;
+        if(Math.abs(ax) < 3 && Math.abs(ay) < 3) return;
+        if(!resolveMove(ax, ay)){ moveDrag = null; return; }
+      }
+      const raw = moveDrag.axis === 'x' ? e.clientX - moveDrag.x : e.clientY - moveDrag.y;
+      const snap = e.altKey ? 1 : 4;
+      let d = Math.round(raw / snap) * snap;
+      let v = moveDrag.knob.base + d;
+      if(v < 0 && /^padding/.test(moveDrag.knob.prop)){ v = 0; d = -moveDrag.knob.base; }
+      moveDrag.d = d; moveDrag.v = v;
+      moveDrag.knob.node.style.setProperty(moveDrag.knob.prop, v + 'px', 'important');
+      placeHandles();
+      if(sel) selBox.firstChild.textContent = tagLabel(sel.el) + '   ' + (d > 0 ? '+' : '') + d + 'px';
+      e.preventDefault();
+      return;
+    }
+    if(!press) return;
+    const dx = e.clientX - press.x, dy = e.clientY - press.y;
+    if(Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+    const el = press.t.el;
+    selectEl(el, press.t.kind);
+    moveDrag = {pending:true, el, x:press.x, y:press.y, d:0};
+    press = null;
+    if(!resolveMove(dx, dy)){ moveDrag = null; return; }
+  }, true);
+  addEventListener('pointerup', ()=>{
+    press = null;
+    if(!moveDrag) return;
+    if(moveDrag.pending){ moveDrag = null; return; }
+    const {knob, d, v, had, prio} = moveDrag;
+    knob.node.style.removeProperty(knob.prop);
+    if(had) knob.node.style.setProperty(knob.prop, had, prio);
+    stopSelecting(false);
+    moveDrag = null;
+    justDragged = true;
+    setTimeout(()=>{ justDragged = false; }, 0);
+    if(sel) selBox.firstChild.textContent = tagLabel(sel.el);
+    if(d) send({t:'nudged', items:[{path:pathOf(knob.node), prop:knob.prop, value:v + 'px'}], note:knobNote(knob)});
+  }, true);
   /* Report what the browser actually ended up using, so the app can tell
      when a page rule has beaten a nudge instead of failing silently. */
   function checkNudges(){
@@ -2269,6 +2452,7 @@ function renderColors(r){
 
 /* Which rule block the current preview width writes into. */
 function vpBucket(){ return S.vp === 390 ? 'phone' : S.vp === 768 ? 'tablet' : 'desktop'; }
+function parentPath(path){ const p = String(path).split('.'); p.pop(); return p.join('.'); }
 const BUCKET_LABEL = {desktop:'desktop (the base rule)', tablet:'tablet and below (max-width 1024)', phone:'phones (max-width 640)'};
 
 /* What the cascade should be producing right now for this element. */
@@ -2288,10 +2472,15 @@ function nudgeRecord(path){
 }
 function applyNudgeItems(items, note){
   snapshot();
+  S.nudgeNote = null;
   const bucket = vpBucket();
   const said = [];
   for(const it of items){
     const rec = nudgeRecord(it.path);
+    /* The knob that moves an element is not always on the element itself, so
+       remember who it was for. That is what the panel lists and what Reset
+       clears. */
+    rec.via = (S.sel && S.sel.path) || it.path;
     rec[bucket][it.prop] = it.value;
     said.push(rec.id + ' ' + it.prop + ' ' + it.value);
   }
@@ -2305,11 +2494,15 @@ function doNudge(mode, prop, sign, shift){
   if(!S.sel) return;
   sendPv({t:'nudge', mode, prop, path:S.sel.path, step: sign * nudgeStep(shift)});
 }
+function nudgesFor(path){
+  return Object.entries(S.project.nudges).filter(([k, rec]) => k === path || rec.via === path);
+}
 function clearNudge(path){
-  if(!S.project.nudges[path]) return;
+  const mine = nudgesFor(path);
+  if(!mine.length) return;
   snapshot();
-  delete S.project.nudges[path];
-  log('Cleared the spacing adjustments on ' + path);
+  for(const [k] of mine) delete S.project.nudges[k];
+  log('Cleared ' + mine.length + ' spacing adjustment' + (mine.length===1?'':'s') + ' made for this element');
   rebuild(true); renderElement();
 }
 
@@ -2409,7 +2602,7 @@ function renderElement(){
   box.append(el('div','hr'));
   const nh = el('div','lbl','Spacing · writing to ' + BUCKET_LABEL[vpBucket()]);
   box.append(nh);
-  box.append(el('div','hint','Arrow keys work too. Hold Shift for 8px steps instead of 4px.'));
+  box.append(el('div','hint','Grab the orange \u21d5 handle at the top-left of the selection and drag. Arrow keys nudge 4px, Shift 8px, Alt while dragging gives 1px.'));
 
   const pad = el('div','nudgepad');
   const mk = (label, title, fn, cls)=>{
@@ -2434,21 +2627,31 @@ function renderElement(){
   gaps.append(mk('+','More space below', (sh)=>doNudge('element','margin-bottom',1,sh)));
   box.append(gaps);
 
-  const rec = S.project.nudges[sel.path];
-  if(rec){
+  const mine = nudgesFor(sel.path);
+  if(mine.length){
     const tbl = el('div');
-    for(const b of NUDGE_BUCKETS){
-      const decls = rec[b] || {};
-      const keys = Object.keys(decls);
-      if(!keys.length) continue;
-      const line = el('div','sub', (b === 'desktop' ? 'desktop' : b) + ': ' + keys.map(k=>k.replace('margin-','') + ' ' + decls[k]).join(', ')
-                     + (b === vpBucket() ? '  ← editing' : ''));
-      if(b === vpBucket()) line.style.color = 'var(--marking)';
-      tbl.append(line);
+    for(const [path, rec] of mine){
+      const where = path === sel.path ? 'on this element'
+                  : path === parentPath(sel.path) ? 'on the box around it'
+                  : 'on a neighbouring element';
+      tbl.append(el('div','sub','[data-nudge="' + rec.id + '"] \u00b7 ' + where));
+      for(const b of NUDGE_BUCKETS){
+        const decls = rec[b] || {};
+        const keys = Object.keys(decls);
+        if(!keys.length) continue;
+        const line = el('div','sub','   ' + b + ': ' + keys.map(k=>k.replace(/^(margin|padding)-/,'$1 ') + ' ' + decls[k]).join(', ')
+                       + (b === vpBucket() ? '  \u2190 editing' : ''));
+        if(b === vpBucket()) line.style.color = 'var(--marking)';
+        tbl.append(line);
+      }
+      if(rec.important) tbl.append(el('div','sub','   !important added, because the page\u2019s own CSS was overriding it'));
     }
-    if(rec.important) tbl.append(el('div','sub','marked !important, because the page\u2019s own CSS was overriding it'));
-    tbl.append(el('div','sub','selector: [data-nudge="' + rec.id + '"]'));
     box.append(tbl);
+  }
+  if(S.nudgeNote){
+    const warn = el('div','note', S.nudgeNote);
+    warn.style.borderLeftColor = 'var(--warn)';
+    box.append(warn);
   }
   const nudgeCount = Object.keys(S.project.nudges).length;
   if(nudgeCount){
@@ -2508,7 +2711,11 @@ addEventListener('message', (e)=>{
   else if(m.t === 'selRange'){ S.hasRange = m.has; const b = $('#btnColorSel'); if(b) b.disabled = !m.has; }
   else if(m.t === 'noSelection'){ log('Select some words first, then apply the colour.', 'warn'); }
   else if(m.t === 'hintBlock'){
-    if(!S.hintedBlock){ S.hintedBlock = true; log('Container selected. Use the arrows to move it, or the trail in the Element panel to step further out.'); }
+    if(!S.hintedBlock){ S.hintedBlock = true; log('Container selected. Grab the \u21d5 handle at its top-left to move it, or step further out with the trail in the Element panel.'); }
+  }
+  else if(m.t === 'dragging'){
+    $('#editChip').className = 'chip warn';
+    $('#editChip').lastElementChild.textContent = m.note ? 'moving — ' + m.note.split(',')[0] : 'moving';
   }
   else if(m.t === 'hintPick'){
     if(!S.hintedPick){ S.hintedPick = true; log('Drag the handle to resize. Double-click the image to swap it.'); }
@@ -2521,7 +2728,11 @@ addEventListener('message', (e)=>{
     rebuild(false);              // the preview already shows the new size
   }
   else if(m.t === 'nudged'){ applyNudgeItems(m.items, m.note); }
-  else if(m.t === 'nudgeFail'){ log(m.msg, 'warn'); }
+  else if(m.t === 'nudgeFail'){
+    log(m.msg, 'warn');
+    S.nudgeNote = m.msg;
+    renderElement();
+  }
   else if(m.t === 'nudgeKey'){
     const map = {up:['margin-top',-1], down:['margin-top',1], left:['margin-left',-1], right:['margin-left',1]};
     const [prop, sign] = map[m.dir] || [];
@@ -2531,9 +2742,9 @@ addEventListener('message', (e)=>{
   else if(m.t === 'find'){ S.findN = m.n; S.findI = m.i; $('#findCnt').textContent = m.n ? (m.i + '/' + m.n) : ($('#findInput').value ? 'none' : ''); }
   else if(m.t === 'undo'){ undo(); }
   else if(m.t === 'editing'){ $('#editChip').lastElementChild.textContent = 'editing — Esc cancels'; $('#editChip').className='chip warn'; }
-  else if(m.t === 'cancelled'){ $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip'; }
+  else if(m.t === 'cancelled'){ $('#editChip').lastElementChild.textContent = 'click to edit, \u21d5 to move'; $('#editChip').className='chip'; }
   else if(m.t === 'ready'){
-    $('#editChip').lastElementChild.textContent = 'click to edit'; $('#editChip').className='chip';
+    $('#editChip').lastElementChild.textContent = 'click to edit, \u21d5 to move'; $('#editChip').className='chip';
     verifyNudges(m.nudgeCheck || []);
   }
 });
@@ -3371,6 +3582,23 @@ function runTests(){
       if(d1.length !== d2.length) throw new Error('line count changed');
       if(changed !== 1) throw new Error(changed + ' lines changed');
       return 'exactly 1 line differs';
+    });
+    T('An adjustment made on a neighbour is still filed under the element you moved', ()=>{
+      const saveP = S.project;
+      try{
+        S.project = P();
+        S.sel = {path:'1.1.2'};
+        S.vp = 0;
+        /* the preview found that the element above was setting the gap */
+        applyNudgeItems([{path:'1.1.1', prop:'margin-bottom', value:'12px'}], 'from the element above');
+        const mine = nudgesFor('1.1.2');
+        if(mine.length !== 1) throw new Error('not filed against the selected element');
+        if(mine[0][0] !== '1.1.1') throw new Error('wrong element carries the rule');
+        if(S.project.nudges['1.1.1'].via !== '1.1.2') throw new Error('provenance not recorded');
+        clearNudge('1.1.2');
+        if(Object.keys(S.project.nudges).length) throw new Error('reset left the neighbour rule behind');
+        return 'rule sits on the neighbour, listed and cleared from the element you selected';
+      } finally { S.project = saveP; S.sel = null; }
     });
     T('A container can be nudged, not just the text inside it', ()=>{
       const p = P();

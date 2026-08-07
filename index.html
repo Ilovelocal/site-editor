@@ -1805,16 +1805,29 @@ function PREVIEW_AGENT(){
      above, collapse out through the parent, or be swallowed by a grid or flex
      row. Rather than guess from the computed styles, each candidate is applied
      for one frame and measured. Only one that genuinely moves is kept. */
-  function trial(node, prop, value, measure, want){
+  /* Returns how far the element moved per pixel of the property. A centred
+     hero absorbs half of any margin you add, so the answer there is about
+     0.5 rather than 1 — that still means this is the right knob, it just
+     needs twice the value. Demanding an exact 1:1 response was making the
+     editor give up on the element and shift the whole section instead. */
+  function probeKnob(node, prop, base, delta, measure){
     const before = measure();
     const had = node.style.getPropertyValue(prop);
     const prio = node.style.getPropertyPriority(prop);
-    node.style.setProperty(prop, value + 'px', 'important');
+    node.style.setProperty(prop, (base + delta) + 'px', 'important');
     const moved = measure() - before;
     node.style.removeProperty(prop);
     if(had) node.style.setProperty(prop, had, prio);
-    return Math.abs(moved - want) < 1.5;
+    return moved / delta;
   }
+  const RESPONSE_MIN = 0.15;   // below this the property is doing nothing useful
+  /* The value this knob needs in order to move the element by `want`. */
+  function valueFor(c, want){
+    let v = c.base + Math.round(want / c.ratio);
+    if(v < 0 && /^padding/.test(c.prop)) v = 0;
+    return v;
+  }
+  function movedBy(c, v){ return Math.round((v - c.base) * c.ratio); }
   function baseOf(node, prop){
     const cs = getComputedStyle(node);
     return px(prop === 'margin-top' ? cs.marginTop : prop === 'margin-bottom' ? cs.marginBottom :
@@ -1867,13 +1880,15 @@ function PREVIEW_AGENT(){
     return 'by moving ' + tagLabel(c.node) + ' around it, because the element itself is pinned by its container';
   }
   /* Find the one knob that actually shifts this element in this direction. */
-  function findKnob(el, axis, probe){
+  function findKnob(el, axis, probe, preferSibling){
     const measure = measureFor(el, axis);
     if(!measure) return null;
-    for(const c of candidatesFor(el, axis, false)){
-      const v = c.base + probe;
-      if(v < 0 && /^padding/.test(c.prop)) continue;
-      if(trial(c.node, c.prop, v, measure, probe)) return c;
+    for(const c of candidatesFor(el, axis, !!preferSibling)){
+      if(c.base + probe < 0 && /^padding/.test(c.prop)) continue;
+      const ratio = probeKnob(c.node, c.prop, c.base, probe, measure);
+      if(!isFinite(ratio) || Math.abs(ratio) < RESPONSE_MIN) continue;
+      c.ratio = ratio;
+      return c;
     }
     return null;
   }
@@ -1887,15 +1902,12 @@ function PREVIEW_AGENT(){
                : m.prop === 'margin-left' ? 'x' : 'y';
     if(axis === 'x' && isCentred(el))
       return send({t:'nudgeFail', msg:'This element is centred by its own margins. Moving it sideways would break that.'});
-    const measure = measureFor(el, axis);
-    if(!measure) return send({t:'nudgeFail', msg:'Nothing follows this element, so there is no space below it to change.'});
-    for(const c of candidatesFor(el, axis, m.mode === 'gap')){
-      const v = c.base + m.step;
-      if(v < 0 && /^padding/.test(c.prop)) continue;
-      if(trial(c.node, c.prop, v, measure, m.step))
-        return send({t:'nudged', items:[{path:pathOf(c.node), prop:c.prop, value:v + 'px'}], note:knobNote(c)});
-    }
-    send({t:'nudgeFail', msg:NO_MOVE});
+    if(!measureFor(el, axis)) return send({t:'nudgeFail', msg:'Nothing follows this element, so there is no space below it to change.'});
+    const c = findKnob(el, axis, m.step, m.mode === 'gap');
+    if(!c) return send({t:'nudgeFail', msg:NO_MOVE});
+    const v = valueFor(c, m.step);
+    send({t:'nudged', items:[{path:pathOf(c.node), prop:c.prop, value:v + 'px'}],
+          note:knobNote(c), warn:c.rel === 'ancestor'});
   }
 
   /* ---- drag to move ----
@@ -1922,6 +1934,7 @@ function PREVIEW_AGENT(){
     const probe = axis === 'y' ? (dy >= 0 ? 8 : -8) : (dx >= 0 ? 8 : -8);
     const knob = findKnob(el, axis, probe) || findKnob(el, axis, -probe);
     if(!knob){ send({t:'nudgeFail', msg:NO_MOVE}); return false; }
+    moveDrag.warn = knob.rel === 'ancestor';
     moveDrag.axis = axis; moveDrag.knob = knob; moveDrag.pending = false;
     moveDrag.v = knob.base;
     moveDrag.had = knob.node.style.getPropertyValue(knob.prop);
@@ -1955,9 +1968,9 @@ function PREVIEW_AGENT(){
       }
       const raw = moveDrag.axis === 'x' ? e.clientX - moveDrag.x : e.clientY - moveDrag.y;
       const snap = e.altKey ? 1 : 4;
-      let d = Math.round(raw / snap) * snap;
-      let v = moveDrag.knob.base + d;
-      if(v < 0 && /^padding/.test(moveDrag.knob.prop)){ v = 0; d = -moveDrag.knob.base; }
+      const want = Math.round(raw / snap) * snap;
+      const v = valueFor(moveDrag.knob, want);
+      const d = movedBy(moveDrag.knob, v);      // what the page will actually do
       moveDrag.d = d; moveDrag.v = v;
       moveDrag.knob.node.style.setProperty(moveDrag.knob.prop, v + 'px', 'important');
       placeHandles();
@@ -1986,7 +1999,8 @@ function PREVIEW_AGENT(){
     justDragged = true;
     setTimeout(()=>{ justDragged = false; }, 0);
     if(sel) selBox.firstChild.textContent = tagLabel(sel.el);
-    if(d) send({t:'nudged', items:[{path:pathOf(knob.node), prop:knob.prop, value:v + 'px'}], note:knobNote(knob)});
+    if(d) send({t:'nudged', items:[{path:pathOf(knob.node), prop:knob.prop, value:v + 'px'}],
+                note:knobNote(knob), warn:knob.rel === 'ancestor'});
   }, true);
   /* Report what the browser actually ended up using, so the app can tell
      when a page rule has beaten a nudge instead of failing silently. */
@@ -2470,9 +2484,11 @@ function nudgeRecord(path){
   for(const b of NUDGE_BUCKETS) if(!rec[b]) rec[b] = {};
   return rec;
 }
-function applyNudgeItems(items, note){
+function applyNudgeItems(items, note, warn){
   snapshot();
-  S.nudgeNote = null;
+  S.nudgeNote = warn
+    ? 'That moved the whole box around this element, background and all, because the element itself could not be shifted. Undo if it took too much with it, then select a smaller box and move that.'
+    : null;
   const bucket = vpBucket();
   const said = [];
   for(const it of items){
@@ -2485,7 +2501,8 @@ function applyNudgeItems(items, note){
     said.push(rec.id + ' ' + it.prop + ' ' + it.value);
   }
   S.pendingCheck = items.map(i=>({path:i.path, prop:i.prop, value:parseFloat(i.value)}));
-  log('Nudged on ' + BUCKET_LABEL[bucket] + ' — ' + said.join(', ') + (note ? ' (' + note + ')' : ''), 'ok');
+  log('Nudged on ' + BUCKET_LABEL[bucket] + ' — ' + said.join(', ') + (note ? ' (' + note + ')' : ''), warn ? 'warn' : 'ok');
+  if(warn) log('That shifted the whole section, including its background. Undo if that is not what you wanted.', 'warn');
   rebuild(true);
   renderElement();
 }
@@ -2727,7 +2744,7 @@ addEventListener('message', (e)=>{
     log('Resized ' + m.path + ' — ' + Object.entries(m.decls).map(([k,v])=>k+':'+v).join(', '), 'ok');
     rebuild(false);              // the preview already shows the new size
   }
-  else if(m.t === 'nudged'){ applyNudgeItems(m.items, m.note); }
+  else if(m.t === 'nudged'){ applyNudgeItems(m.items, m.note, m.warn); }
   else if(m.t === 'nudgeFail'){
     log(m.msg, 'warn');
     S.nudgeNote = m.msg;

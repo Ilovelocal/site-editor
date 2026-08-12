@@ -78,10 +78,9 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:var(--panel);border-right:1px solid var(--rule);
   display:grid;grid-template-rows:auto 1fr;min-height:0;min-width:0;
 }
-.tabs{display:flex;border-bottom:1px solid var(--rule);background:var(--panel-2);overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
+.tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--rule);background:var(--panel-2)}
 .tab{
-  flex:1 0 auto;padding:8px 10px;border:0;border-bottom:2px solid transparent;background:transparent;
+  flex:1 1 auto;min-width:60px;padding:8px 8px;border:0;border-bottom:2px solid transparent;background:transparent;
   font:10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);cursor:pointer;
 }
 .tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--marking);background:var(--panel)}
@@ -138,6 +137,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .crumb:hover{border-color:var(--marking);color:var(--marking);background:#fff}
 .crumb.on{background:var(--ink);border-color:var(--ink);color:#fff}
 .crumbs .sep{color:var(--ink-3);font-size:10px}
+
+/* page tabs */
+.pagebar{display:flex;flex-wrap:wrap;gap:3px;align-items:center}
+.pagetab{border:1px solid var(--rule);background:var(--panel-2);border-radius:var(--r);padding:5px 9px;
+  cursor:pointer;font:11px/1.2 var(--mono);color:var(--ink-2);white-space:nowrap;display:inline-flex;gap:5px;align-items:center}
+.pagetab:hover{border-color:var(--blueprint);background:#fff}
+.pagetab.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.pagetab i{width:5px;height:5px;border-radius:50%;background:var(--marking);font-style:normal;display:none}
+.pagetab.hasform i{display:block}
+.pagetab.on i{background:var(--gold,#F0AA20)}
 
 /* nudge pad */
 .nudgepad{display:grid;grid-template-columns:repeat(3,34px);gap:4px;justify-content:center;margin:6px 0}
@@ -296,13 +305,13 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
         </section>
 
         <section class="pane" id="p-seo">
-          <div class="lbl">Search result</div>
+          <div class="lbl" id="seoWhich">Search result</div>
           <div id="serp" class="note" style="border-left-color:var(--marking)"></div>
           <div class="lbl" style="margin-top:10px">Page title <span id="cTitle" class="cnt"></span></div>
           <input class="field" id="seoTitle" placeholder="Alvarez Roofing — storm damage repair">
           <div class="lbl" style="margin-top:8px">Meta description <span id="cDesc" class="cnt"></span></div>
           <textarea class="field" id="seoDesc" rows="3" placeholder="What this business does and where, in one sentence."></textarea>
-          <div class="lbl" style="margin-top:8px">Site address</div>
+          <div class="lbl" style="margin-top:8px">Site address <span style="text-transform:none;letter-spacing:0">— for the whole site; each page gets its own URL from it</span></div>
           <input class="field" id="seoCanonical" placeholder="https://alvarezroofing.com">
           <div class="row" style="margin-top:6px">
             <select class="field" id="seoRobots">
@@ -315,7 +324,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <div class="lbl">Sharing preview <span style="text-transform:none;letter-spacing:0">— Facebook, Messenger, WhatsApp</span></div>
           <div class="row"><select class="field" id="seoOgImage"></select></div>
           <div class="hr"></div>
-          <div class="lbl">Business listing <span style="text-transform:none;letter-spacing:0">— feeds the hours-and-phone box in Google</span></div>
+          <div class="lbl">Business listing <span style="text-transform:none;letter-spacing:0">— shared by every page; feeds the hours-and-phone box in Google</span></div>
           <div id="bizFields"></div>
           <div class="hr"></div>
           <div class="lbl">Audit</div>
@@ -357,6 +366,9 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <div class="lbl">Project name</div>
           <div class="row"><input class="field" id="nameField" placeholder="e.g. Alvarez Roofing" disabled></div>
           <div class="hr"></div>
+          <div class="lbl">Browser compatibility <span id="tCompat" class="cnt"></span></div>
+          <div id="compatBox"></div>
+          <div class="hr"></div>
           <div class="lbl">Unresolved references</div>
           <div id="problems"><div class="empty">Nothing to report.</div></div>
           <div class="hr"></div>
@@ -370,6 +382,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
     <!-- ============ board ============ -->
     <div id="board">
       <div class="boardbar">
+        <div class="pagebar" id="pageBar"></div>
         <div class="seg" id="vpSeg">
           <button data-w="0" aria-pressed="true">Desktop</button>
           <button data-w="768" aria-pressed="false">Tablet</button>
@@ -391,9 +404,9 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
         <div id="dropzone">
           <div class="card">
             <h1>Open a site to start</h1>
-            <p>Drop a client's <code>index.html</code> here, or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
+            <p>Drop a client's <code>index.html</code> here — or all the pages of the site at once — or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
             <div class="row" style="justify-content:center">
-              <button class="btn primary" id="dzHtml">Choose HTML file</button>
+              <button class="btn primary" id="dzHtml">Choose HTML files</button>
               <button class="btn" id="dzProj">Open project</button>
               <button class="btn" id="dzDemo">Load test page</button>
             </div>
@@ -449,7 +462,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
   </div>
 </div>
 
-<input type="file" id="fHtml" accept=".html,.htm,text/html" hidden>
+<input type="file" id="fHtml" accept=".html,.htm,text/html" multiple hidden>
 <input type="file" id="fProj" accept=".json,application/json" hidden>
 <input type="file" id="fImg" accept="image/*" hidden>
 <input type="file" id="fLogo" accept="image/*" hidden>
@@ -949,6 +962,177 @@ function auditSeo(doc, head){
 }
 
 /* ==========================================================================
+   3b1. Browser compatibility.
+
+   Chromium and WebKit disagree about a percentage height on a grid item whose
+   row is auto-sized. Chromium treats `height:100%` as `auto` — the spec answer
+   for an indefinite containing block. WebKit resolves it against the whole
+   grid, so the element grows past its own row and paints across whatever sits
+   below it. On a desktop layout the rows usually have definite heights and
+   nothing shows; the damage appears when a media query collapses the grid to
+   one column, which is to say on phones only, which is to say after the site
+   has already gone out.
+
+   These checks are static — they read the page's CSS rather than measuring a
+   live layout — because the editor cannot run WebKit to observe the fault
+   from a Chromium-based browser.
+   ========================================================================== */
+
+/* A very small CSS reader: enough to walk rules and @media blocks. It is not
+   a general parser and does not try to be. */
+function readCss(css){
+  const rules = [];
+  const scan = (text, media)=>{
+    let i = 0;
+    while(i < text.length){
+      const open = text.indexOf('{', i);
+      if(open < 0) break;
+      const head = text.slice(i, open).trim();
+      if(/^@media/i.test(head)){
+        /* find this block's matching close brace */
+        let depth = 1, j = open + 1;
+        while(j < text.length && depth){
+          if(text[j] === '{') depth++;
+          else if(text[j] === '}') depth--;
+          j++;
+        }
+        scan(text.slice(open + 1, j - 1), head.replace(/^@media\s*/i, '').trim());
+        i = j; continue;
+      }
+      if(/^@/.test(head)){                      // @font-face, @keyframes, skip
+        let depth = 1, j = open + 1;
+        while(j < text.length && depth){
+          if(text[j] === '{') depth++;
+          else if(text[j] === '}') depth--;
+          j++;
+        }
+        i = j; continue;
+      }
+      const close = text.indexOf('}', open);
+      if(close < 0) break;
+      const body = text.slice(open + 1, close);
+      const decls = {};
+      for(const d of cssDecls(body)){
+        const c = d.indexOf(':');
+        if(c > 0) decls[d.slice(0, c).trim().toLowerCase()] = d.slice(c + 1).trim();
+      }
+      for(const sel of head.split(',')){
+        const t = sel.trim();
+        if(t) rules.push({media, sel:t, decls});
+      }
+      i = close + 1;
+    }
+  };
+  scan(String(css || ''), '');
+  return rules;
+}
+
+/* "\.service-row img" -> "\.service-row" */
+function parentSelector(sel){
+  const parts = sel.trim().split(/\s+/);
+  if(parts.length < 2) return '';
+  parts.pop();
+  const last = parts[parts.length - 1];
+  if(last === '>' || last === '+' || last === '~') parts.pop();
+  return parts.join(' ');
+}
+function definiteRows(v){
+  if(!v) return false;
+  return !/auto|min-content|max-content|minmax\(\s*(auto|min-content)/i.test(v);
+}
+function singleColumn(v){
+  if(!v) return false;
+  const t = v.trim();
+  if(/^(none|auto)$/i.test(t)) return false;
+  return t.split(/\s+(?![^(]*\))/).length === 1;
+}
+
+/* Newly found faults are switched on by default: the whole trap is that the
+   page looks correct in the browser you are testing in, so an off-by-default
+   fix would sit there unnoticed until a customer opened the site on a phone.
+   Each one can be turned off individually, and the panel says what changed. */
+function scanCompat(doc){
+  const issues = [];
+  const rules = [];
+  for(const st of doc.querySelectorAll('style')){
+    if(!isInjected(st) && !st.hasAttribute('data-compat-block')) rules.push(...readCss(st.textContent));
+  }
+  const declsFor = (sel)=>{
+    const out = {base:{}, media:[]};
+    for(const r of rules){
+      if(r.sel !== sel) continue;
+      if(r.media) out.media.push(r);
+      else Object.assign(out.base, r.decls);
+    }
+    return out;
+  };
+  let seq = 0;
+  for(const r of rules){
+    const h = r.decls['height'];
+    if(!h || !/^100%$/.test(h.trim())) continue;
+    const par = parentSelector(r.sel);
+    if(!par) continue;
+    const owner = declsFor(par);
+    const isGrid = /grid/.test(owner.base['display'] || '') ||
+                   owner.media.some(m => /grid/.test(m.decls['display'] || ''));
+    if(!isGrid) continue;
+    /* A grid with definite row heights is not at risk: the percentage has
+       something real to resolve against. */
+    if(definiteRows(owner.base['grid-template-rows'])) continue;
+    /* Find where the grid collapses to a single column — that is where the
+       fault actually shows. */
+    let where = '';
+    for(const m of owner.media){
+      if(singleColumn(m.decls['grid-template-columns'])){
+        if(!where || m.media.length > where.length) where = m.media;
+      }
+    }
+    if(!where && singleColumn(owner.base['grid-template-columns'])) where = '';
+    else if(!where) continue;      // never collapses, so the row stays definite
+    const min = r.decls['min-height'];
+    const fix = (min && /^\d+(\.\d+)?px$/.test(min.trim())) ? min.trim() : 'auto';
+    issues.push({
+      id: 'c' + (++seq),
+      sel: r.sel, media: where, fix,
+      msg: 'In WebKit — every browser on iPhone and iPad — "' + r.sel + '" grows past its row and the text below it lands on top of the picture.',
+      why: '"' + par + '" becomes a single column' + (where ? ' at ' + where : '') +
+           ', so its rows size to their content. Chromium reads height:100% there as auto; WebKit resolves it against the whole grid.',
+      how: 'Give it a definite height of ' + fix + ' at that width, so there is nothing to resolve and both browsers agree.'
+    });
+  }
+  return issues;
+}
+
+function applyCompat(doc, project, issues, problems){
+  const on = project.compat || {};
+  const use = issues.filter(i => on[i.id] !== false);
+  const missing = Object.keys(on).filter(k => on[k] === true && !issues.some(i => i.id === k));
+  for(const k of missing) problems.push({kind:'compat', ref:k, msg:'A browser fix was switched on for a rule that is no longer in this page (' + k + ')'});
+  if(!use.length) return '';
+  const byMedia = new Map();
+  for(const i of use){
+    if(!byMedia.has(i.media)) byMedia.set(i.media, []);
+    byMedia.get(i.media).push(i);
+  }
+  const out = ['/* Browser fixes written by Site Editor.',
+               '   WebKit and Chromium disagree about a percentage height inside an',
+               '   auto-sized grid row. Each rule below pins a definite height so they',
+               '   agree. Delete this block to remove them all. */'];
+  for(const [media, list] of [...byMedia.entries()].sort()){
+    const body = list.sort((a,b)=> a.id < b.id ? -1 : 1)
+                     .map(i => '  ' + i.sel + '{height:' + i.fix + '}');
+    if(media){ out.push('@media ' + media + ' {'); out.push(...body.map(b=>'  '+b)); out.push('}'); }
+    else out.push(...body.map(b=>b.trim()));
+  }
+  const css = '\n' + out.join('\n') + '\n';
+  const st = doc.createElement('style');
+  st.setAttribute('data-compat-block','');
+  st.textContent = css;
+  doc.head.appendChild(st);
+  return css;
+}
+
+/* ==========================================================================
    3b2. Spacing nudges.
         Every adjustment is a margin, so the element stays in normal flow and
         whatever sits below it moves too. Nothing is written as an inline
@@ -1025,8 +1209,10 @@ const FORM_ENHANCE = [
 
 function applyForm(doc, form, problems){
   if(!form || !form.enabled) return false;
+  /* Most pages of a site have no form, and that is not a fault. Whether the
+     site as a whole has one is checked once, in buildAll. */
   const f = doc.querySelector('form');
-  if(!f){ problems.push({kind:'form', ref:'form', msg:'Contact form is switched on, but this page has no <form> element. SETUP.md includes markup you can paste in.'}); return false; }
+  if(!f) return false;
   f.setAttribute('data-contact-form','');
   f.setAttribute('action', '/api/contact');
   f.setAttribute('method', 'post');
@@ -1203,8 +1389,8 @@ function contactFunction(form){
 
 /* A per-client checklist with the values already filled in. */
 function setupNotes(project){
-  const f = project.form || {}, h = project.head || {};
-  const domain = (h.canonical || '').replace(/^https?:\/\//,'').replace(/\/.*$/,'') || 'yourclientdomain.com';
+  const f = project.form || {};
+  const domain = (project.origin || '').replace(/^https?:\/\//,'').replace(/\/.*$/,'') || 'yourclientdomain.com';
   const L = [
     '# Setup for ' + (project.name || 'this site'),
     '',
@@ -1432,6 +1618,10 @@ function build(project, assets, mode){
           appends one stylesheet block. ------------------------------------- */
   const nudgeCss = applyNudges(doc, project, problems);
 
+  /* 4e1. browser fixes. Appends one stylesheet block, no path shift. ------ */
+  const compat = scanCompat(doc);
+  const compatCss = applyCompat(doc, project, compat, problems);
+
   /* 4e. head. Injecting into <head> would shift child indexes, so this is
          strictly last. ----------------------------------------------------- */
   const head = project.head || blankHead();
@@ -1452,28 +1642,50 @@ function build(project, assets, mode){
 
   /* 4f. companion files for the folder export ---------------------------- */
   const extras = new Map();
-  if(mode === 'folder'){
-    if(head.canonical){
-      const origin = head.canonical.replace(/\/+$/,'');
-      extras.set('robots.txt', {name:'robots.txt', data:U.utf8(
-        'User-agent: *\n' + (/noindex/i.test(head.robots||'') ? 'Disallow: /\n' : 'Allow: /\n') +
-        'Sitemap: ' + origin + '/sitemap.xml\n')});
-      extras.set('sitemap.xml', {name:'sitemap.xml', data:U.utf8(
-        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-        '  <url><loc>' + origin + '/</loc></url>\n</urlset>\n')});
-    }
-    if(formOn || (project.form && project.form.enabled)){
-      extras.set('functions/api/contact.js', {name:'functions/api/contact.js', data:U.utf8(contactFunction(project.form))});
-      extras.set('SETUP.md', {name:'SETUP.md', data:U.utf8(setupNotes(project))});
-    }
-  }
 
   return {
     doc,
     html: Model.serialize(doc, project.originalHtml),
-    slots, colors: colorList, problems, files, extras, nudgeCss,
+    slots, colors: colorList, problems, files, extras, nudgeCss, compat, compatCss,
     seo: auditSeo(doc, head), formOn
   };
+}
+
+/* Build every page. Assets are shared, so a logo used on five pages is one
+   file in the export. Nothing here mutates the project. */
+function buildAll(project, assets, mode){
+  const pages = [], files = new Map(), extras = new Map();
+  const problems = [];
+  for(const name of pageNames(project)){
+    const view = pageView(project, name);
+    const r = build(view, assets, mode);
+    for(const pr of r.problems) problems.push(Object.assign({page:name}, pr));
+    for(const [k, v] of r.files) if(!files.has(k)) files.set(k, v);
+    pages.push({name, r});
+  }
+  if(mode === 'folder'){
+    const origin = (project.origin || '').replace(/\/+$/,'');
+    if(origin){
+      const noindex = /noindex/i.test((project.pages[pageNames(project)[0]].head||{}).robots || '');
+      extras.set('robots.txt', {name:'robots.txt', data:U.utf8(
+        'User-agent: *\n' + (noindex ? 'Disallow: /\n' : 'Allow: /\n') +
+        'Sitemap: ' + origin + '/sitemap.xml\n')});
+      const urls = pageNames(project)
+        .filter(n => !/noindex/i.test((project.pages[n].head||{}).robots || ''))
+        .map(n => '  <url><loc>' + origin + (n === 'index.html' ? '/' : '/' + n) + '</loc></url>')
+        .join('\n');
+      extras.set('sitemap.xml', {name:'sitemap.xml', data:U.utf8(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+        urls + '\n</urlset>\n')});
+    }
+    if(project.form && project.form.enabled && !pages.some(p => p.r.formOn))
+      problems.push({kind:'form', ref:'form', msg:'The contact form is switched on, but no page in this site has a <form>. SETUP.md includes markup you can paste in.'});
+    if(project.form && project.form.enabled){
+      extras.set('functions/api/contact.js', {name:'functions/api/contact.js', data:U.utf8(contactFunction(project.form))});
+      extras.set('SETUP.md', {name:'SETUP.md', data:U.utf8(setupNotes(project))});
+    }
+  }
+  return {pages, files, extras, problems};
 }
 
 /* ==========================================================================
@@ -2220,6 +2432,8 @@ const Store = {
    ========================================================================== */
 const S = {
   project:null,            // persisted document state
+  page:null,               // filename of the page being edited
+  allBuilt:null,           // last full-site build
   assets:Object.create(null), // hash -> {mime,b64,bytes,w,h,name,from}
   built:null,
   undo:[], redo:[],
@@ -2229,6 +2443,7 @@ const S = {
 };
 const UNDO_MAX = 60;
 
+function CUR(){ return S.project && S.page ? S.project.pages[S.page] : null; }
 const $ = (s)=>document.querySelector(s);
 const $$ = (s)=>[...document.querySelectorAll(s)];
 const el = (t, cls, txt)=>{ const e=document.createElement(t); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; };
@@ -2249,9 +2464,8 @@ function fail(msg, e){ log(msg + (e ? ' — ' + (e.message||e) : ''), 'err'); }
 
 function snapshot(){
   if(!S.project) return;
-  S.undo.push(JSON.stringify({edits:S.project.edits, images:S.project.images, colors:S.project.colors,
-                              styles:S.project.styles, head:S.project.head, form:S.project.form,
-                              nudges:S.project.nudges, nudgeSeq:S.project.nudgeSeq}));
+  S.undo.push(JSON.stringify({pages:S.project.pages, colors:S.project.colors, form:S.project.form,
+                              biz:S.project.biz, origin:S.project.origin, lang:S.project.lang}));
   if(S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;
   S.dirty = true;
@@ -2260,9 +2474,9 @@ function snapshot(){
 function undo(){
   if(!S.undo.length || !S.project) return;
   const prev = JSON.parse(S.undo.pop());
-  S.project.edits = prev.edits; S.project.images = prev.images; S.project.colors = prev.colors;
-  S.project.styles = prev.styles; S.project.head = prev.head; S.project.form = prev.form;
-  S.project.nudges = prev.nudges; S.project.nudgeSeq = prev.nudgeSeq;
+  S.project.pages = prev.pages; S.project.colors = prev.colors; S.project.form = prev.form;
+  S.project.biz = prev.biz; S.project.origin = prev.origin; S.project.lang = prev.lang;
+  for(const n of pageNames(S.project)) indexSource(S.project.pages[n]);
   $('#btnUndo').disabled = !S.undo.length;
   rebuild(true);
   log('Undo — ' + S.undo.length + ' step' + (S.undo.length===1?'':'s') + ' left');
@@ -2271,6 +2485,53 @@ function undo(){
 /* ==========================================================================
    8. Loading a site.
    ========================================================================== */
+/* ==========================================================================
+   Multi-page projects.
+
+   A project holds several pages. What belongs to one page — its HTML, its text
+   edits, its swapped images, its spacing, its title and description — is kept
+   on the page. What belongs to the site — the image library, the colour
+   palette, the business details, the contact form — is kept on the project, so
+   changing a brand colour or a phone number is one edit, not five.
+
+   build() still works on one page at a time. pageView() assembles the shape it
+   already expects, so nothing downstream had to change.
+   ========================================================================== */
+function blankPage(name, html){
+  return {name, originalHtml:html,
+          edits:Object.create(null), images:Object.create(null),
+          styles:Object.create(null), nudges:Object.create(null), nudgeSeq:0,
+          compat:Object.create(null), head:blankPageHead()};
+}
+function blankPageHead(){
+  return {title:'', description:'', canonical:'', robots:'', lang:'',
+          ogTitle:'', ogDescription:'', ogImage:'', twitterCard:'summary_large_image'};
+}
+/* The one page, seen the way build() wants it. */
+function pageView(project, name){
+  const pg = project.pages[name];
+  if(!pg) return null;
+  const head = Object.assign({}, pg.head);
+  head.biz = project.biz;
+  head.lang = pg.head.lang || project.lang || '';
+  /* A page's canonical is the site address plus its own filename, so one
+     domain entry covers every page. */
+  const origin = (project.origin || '').replace(/\/+$/,'');
+  head.canonical = pg.head.canonical || (origin ? (name === 'index.html' ? origin + '/' : origin + '/' + name) : '');
+  return {originalHtml:pg.originalHtml, edits:pg.edits, images:pg.images,
+          styles:pg.styles, nudges:pg.nudges, nudgeSeq:pg.nudgeSeq,
+          compat:pg.compat, srcIndex:pg.srcIndex,
+          colors:project.colors, form:project.form, head};
+}
+function pageNames(project){
+  /* index first, then alphabetical: the order they appear everywhere. */
+  return Object.keys(project.pages).sort((a,b)=>{
+    if(a === 'index.html') return -1;
+    if(b === 'index.html') return 1;
+    return a < b ? -1 : 1;
+  });
+}
+
 function blankHead(){
   return {title:'', description:'', canonical:'', robots:'', lang:'',
           ogTitle:'', ogDescription:'', ogImage:'', twitterCard:'summary_large_image',
@@ -2281,17 +2542,34 @@ function blankForm(){
   return {enabled:false, to:'', from:'', subject:'', success:'Thanks — we\u2019ll get back to you shortly.',
           turnstile:false, siteKey:''};
 }
-function newProject(html, name){
-  return {
-    v:1, id:'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+function newProject(html, name, fileName){
+  const p = {
+    v:2, id:'p_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
     name: name || 'Untitled site',
     createdAt: Date.now(), updatedAt: Date.now(),
-    originalHtml: html,
-    edits:Object.create(null), images:Object.create(null), colors:Object.create(null),
-    styles:Object.create(null), nudges:Object.create(null), nudgeSeq:0,
-    assets:Object.create(null),
-    head:blankHead(), form:blankForm()
+    pages: Object.create(null),
+    colors:Object.create(null), assets:Object.create(null),
+    biz: blankHead().biz, origin:'', lang:'',
+    form: blankForm()
   };
+  if(html != null) addPage(p, fileName || 'index.html', html);
+  return p;
+}
+function safePageName(n){
+  let x = String(n || 'page').split(/[\\/]/).pop().trim();
+  if(!/\.html?$/i.test(x)) x += '.html';
+  return x.toLowerCase().replace(/[^a-z0-9._-]+/g,'-');
+}
+function addPage(project, fileName, html){
+  let name = safePageName(fileName);
+  if(project.pages[name]){
+    const base = name.replace(/\.html?$/i,''), ext = name.slice(base.length);
+    let n = 2;
+    while(project.pages[base + '-' + n + ext]) n++;
+    name = base + '-' + n + ext;
+  }
+  project.pages[name] = blankPage(name, html);
+  return name;
 }
 
 /* Register every data: image already embedded in the source so it can be
@@ -2305,8 +2583,10 @@ function slugForSlot(slot){
   }
   return slot.kind === 'img' ? 'image' : 'background';
 }
-function indexSource(project){
-  const doc = Model.parse(project.originalHtml);
+/* Register the images already embedded in one page so they can be shared with
+   every other page and written out once. */
+function indexSource(page){
+  const doc = Model.parse(page.originalHtml);
   const slots = Model.scanImages(doc);
   const idx = Object.create(null);
   let n = 0, bad = 0;
@@ -2320,49 +2600,123 @@ function indexSource(project){
       name:'embedded.'+U.extFor(p.mime), slug:slugForSlot(s), from:'page'};
     n++;
   }
-  project.srcIndex = idx;
+  page.srcIndex = idx;
   return {n, bad, slots:slots.length};
 }
 
-function openHtml(html, name){
+/* Open one or many .html files as a single site. */
+function openHtmlFiles(files, siteName){
   try{
-    S.project = newProject(html, name);
+    S.project = newProject(null, siteName || (files[0] && files[0].name.replace(/\.html?$/i,'')) || 'Untitled site');
     S.assets = Object.create(null);
     S.undo.length = 0; S.redo.length = 0; S.selKey = null; S.dirty = true;
-    const info = indexSource(S.project);
-    log('Opened ' + (name||'site') + ' — ' + U.fmtBytes(html.length) + ' of HTML, ' + info.slots + ' image slot' + (info.slots===1?'':'s') + ', ' + info.n + ' already embedded', 'ok');
+    let slots = 0, embedded = 0;
+    for(const f of files){
+      const name = addPage(S.project, f.name, f.html);
+      const info = indexSource(S.project.pages[name]);
+      slots += info.slots; embedded += info.n;
+    }
+    const names = pageNames(S.project);
+    S.page = names[0];
+    log('Opened ' + names.length + ' page' + (names.length===1?'':'s') + ' — ' + names.join(', ') +
+        ' · ' + slots + ' image slot' + (slots===1?'':'s') + ', ' + embedded + ' already embedded', 'ok');
+    S.flagCompat = true;
     $('#dropzone').style.display = 'none';
     $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
     $('#nameField').value = S.project.name;
     $('#projname').textContent = S.project.name;
     rebuild(true);
-  }catch(e){ fail('That file could not be opened', e); }
+    reportForms();
+  }catch(e){ fail('Those files could not be opened', e); }
+}
+function openHtml(html, name){ openHtmlFiles([{name:(name||'index')+'.html', html}], name); }
+
+/* Say up front which pages carry a form, since that decides what has to be
+   configured before the site goes live. */
+function reportForms(){
+  if(!S.allBuilt) return;
+  const withForm = S.allBuilt.pages.filter(p => p.r.doc.querySelector('form')).map(p => p.name);
+  if(!withForm.length){
+    log('No <form> found on any page. The Form tab can still be switched on for later.');
+    return;
+  }
+  log('Form found on ' + withForm.length + ' page' + (withForm.length===1?'':'s') + ': ' + withForm.join(', ') +
+      '. One setup covers all of them — configure it once in the Form tab.', 'ok');
 }
 
-function openProjectData(p){
+function addPagesFrom(files){
+  if(!S.project) return openHtmlFiles(files);
+  snapshot();
+  const added = [];
+  for(const f of files){
+    const name = addPage(S.project, f.name, f.html);
+    indexSource(S.project.pages[name]);
+    added.push(name);
+  }
+  log('Added ' + added.join(', ') + ' to this site', 'ok');
+  rebuild(true); reportForms();
+}
+
+/* A project saved before multi-page support kept one page at the top level. */
+function migrate(p){
+  if(p.pages) return p;
+  const q = {
+    v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:p.updatedAt,
+    pages:Object.create(null), colors:p.colors || Object.create(null),
+    biz:(p.head && p.head.biz) || blankHead().biz,
+    origin:(p.head && p.head.canonical) || '', lang:(p.head && p.head.lang) || '',
+    form:p.form || blankForm(), assets:p.assets || {}
+  };
+  const pg = blankPage('index.html', p.originalHtml);
+  pg.edits = p.edits || {}; pg.images = p.images || {}; pg.styles = p.styles || {};
+  pg.nudges = p.nudges || {}; pg.nudgeSeq = p.nudgeSeq || 0; pg.compat = p.compat || {};
+  if(p.head) for(const k of ['title','description','robots','ogTitle','ogDescription','ogImage','twitterCard'])
+    pg.head[k] = p.head[k] || '';
+  q.pages['index.html'] = pg;
+  return q;
+}
+function openProjectData(raw){
   try{
-    if(!p || !p.originalHtml) throw new Error('not a project file');
+    if(!raw || (!raw.originalHtml && !raw.pages)) throw new Error('not a project file');
+    const wasOld = !raw.pages;
+    const p = migrate(raw);
     S.project = p;
-    S.project.edits = p.edits || {}; S.project.images = p.images || {}; S.project.colors = p.colors || {};
-    S.project.styles = p.styles || Object.create(null);
-    S.project.nudges = p.nudges || Object.create(null);
-    S.project.nudgeSeq = p.nudgeSeq || Object.keys(S.project.nudges).length;
-    S.project.head = Object.assign(blankHead(), p.head || {});
-    S.project.head.biz = Object.assign(blankHead().biz, (p.head && p.head.biz) || {});
+    S.project.colors = p.colors || Object.create(null);
+    S.project.biz = Object.assign(blankHead().biz, p.biz || {});
     S.project.form = Object.assign(blankForm(), p.form || {});
+    S.project.origin = p.origin || ''; S.project.lang = p.lang || '';
+    /* Saved assets first, then the images each page already carries. Doing it
+       the other way round wipes the ones indexSource just registered, and every
+       untouched photo comes back as "image data missing". */
     S.assets = Object.create(null);
     for(const [h, a] of Object.entries(p.assets||{})) S.assets[h] = a;
+    for(const n of Object.keys(p.pages)){
+      const g = p.pages[n];
+      g.edits = g.edits || {}; g.images = g.images || {}; g.styles = g.styles || {};
+      g.nudges = g.nudges || {}; g.nudgeSeq = g.nudgeSeq || 0; g.compat = g.compat || {};
+      g.head = Object.assign(blankPageHead(), g.head || {});
+      indexSource(g);
+    }
     S.undo.length = 0; S.redo.length = 0; S.dirty = false;
-    indexSource(S.project);
+    S.page = pageNames(S.project)[0];
     $('#dropzone').style.display = 'none';
     $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
     $('#nameField').value = p.name || '';
     $('#projname').textContent = p.name || 'project';
     const r = rebuild(true);
-    const edits = Object.keys(S.project.edits).length, imgs = Object.keys(S.project.images).length;
-    log('Reopened "' + p.name + '" — ' + edits + ' text edit' + (edits===1?'':'s') + ', ' + imgs + ' image change' + (imgs===1?'':'s') + ', ' + Object.keys(S.project.colors).length + ' recolor(s)', 'ok');
+    let edits = 0, imgs = 0;
+    for(const n of pageNames(S.project)){
+      edits += Object.keys(S.project.pages[n].edits).length;
+      imgs += Object.keys(S.project.pages[n].images).length;
+    }
+    const np = pageNames(S.project).length;
+    log('Reopened "' + p.name + '" — ' + np + ' page' + (np===1?'':'s') + ', ' + edits + ' text edit' +
+        (edits===1?'':'s') + ', ' + imgs + ' image change' + (imgs===1?'':'s') + ', ' +
+        Object.keys(S.project.colors).length + ' recolor(s)', 'ok');
+    if(wasOld) log('That project was saved before multi-page support; it opened as a one-page site. Use "Add pages" to bring in the rest.', 'warn');
     if(r.problems.length) fail(r.problems.length + ' saved reference(s) no longer resolve — see the Info panel');
     else log('Every saved reference resolved.', 'ok');
+    reportForms();
   }catch(e){ fail('That project file could not be opened', e); }
 }
 
@@ -2372,12 +2726,21 @@ function openProjectData(p){
 let rebuildToken = 0;
 function rebuild(reloadPreview){
   if(!S.project) return {problems:[]};
-  let r;
+  let r, all;
   try{
-    r = build(S.project, S.assets, 'preview');
+    all = buildAll(S.project, S.assets, 'preview');
+    S.allBuilt = all;
+    if(!S.page || !S.project.pages[S.page]) S.page = pageNames(S.project)[0];
+    r = (all.pages.find(x => x.name === S.page) || all.pages[0]).r;
+    r = Object.assign({}, r, {problems: all.problems});
   }catch(e){ fail('Rebuild failed', e); return {problems:[]}; }
   S.built = r;
-  renderImages(r); renderColors(r); renderStats(r); renderProblems(r); renderSeo(); renderForm(); renderElement();
+  if(S.flagCompat){
+    S.flagCompat = false;
+    if(r.compat && r.compat.length)
+      log(r.compat.length + ' layout problem' + (r.compat.length===1?'':'s') + ' that will show on iPhone but not in Chrome — see Browser compatibility in the Info panel.', 'warn');
+  }
+  renderImages(r); renderColors(r); renderStats(r); renderProblems(r); renderCompat(r); renderSeo(); renderForm(); renderElement(); renderPages();
   if(reloadPreview){
     const token = ++rebuildToken;
     const pv = $('#pv');
@@ -2397,16 +2760,95 @@ function renderStats(r){
   const bytes = Object.values(S.assets).reduce((n,a)=>n+(a.bytes||0),0);
   $('#stats').innerHTML = '';
   const add = (label, val)=>{ const d=el('div','stat'); d.append(el('b',null,val), el('span',null,label)); $('#stats').append(d); };
-  add('image slots', String(r.slots.length));
+  add('pages', String(pageNames(S.project).length));
+  add('image slots here', String(r.slots.length));
   add('images stored', String(Object.keys(S.assets).length));
   add('uploaded', String(uploaded));
   add('image data', U.fmtBytes(bytes));
   add('colors found', String(r.colors.length));
-  add('text edits', String(Object.keys(S.project.edits).length));
+  add('text edits', String(Object.keys(CUR().edits).length));
   add('page size', U.fmtBytes(r.html.length));
   add('undo depth', String(S.undo.length));
+  if(S.allBuilt){
+    let te = 0; for(const n of pageNames(S.project)) te += Object.keys(S.project.pages[n].edits).length;
+    add('edits, whole site', String(te));
+  }
   $('#tImages').textContent = r.slots.length;
   $('#tColors').textContent = r.colors.length;
+}
+
+function renderCompat(r){
+  const box = $('#compatBox'); box.innerHTML = '';
+  const issues = r.compat || [];
+  $('#tCompat').textContent = issues.length ? issues.length + ' found' : '';
+  if(!issues.length){ box.append(el('div','empty','Nothing found that WebKit and Chromium would lay out differently.')); return; }
+  const on = CUR().compat || (CUR().compat = Object.create(null));
+  const head = el('div','hint');
+  head.textContent = 'These break on iPhone and iPad but look correct in Chrome, so they are easy to ship without noticing. Each fix is a single height, written into one block you can delete.';
+  box.append(head);
+  for(const i of issues){
+    const row = el('div','item');
+    row.append(el('span','tag' + (on[i.id] ? '' : ' edited'), on[i.id] ? 'fixed' : 'breaks'));
+    const meta = el('div','meta');
+    meta.append(el('div','nm', i.msg));
+    meta.append(el('div','sub', i.why));
+    meta.append(el('div','sub', i.how));
+    row.append(meta);
+    const act = el('div','row');
+    const b = el('button','mini', on[i.id] ? 'Undo fix' : 'Fix it');
+    b.onclick = ()=>{
+      snapshot();
+      if(on[i.id]) delete on[i.id]; else on[i.id] = true;
+      log(on[i.id] ? 'Applied the WebKit fix for ' + i.sel + ' (height:' + i.fix + (i.media ? ' at ' + i.media : '') + ')'
+                   : 'Removed the WebKit fix for ' + i.sel, 'ok');
+      rebuild(true);
+    };
+    act.append(b); row.append(act);
+    box.append(row);
+  }
+  const anyOff = issues.some(i => !on[i.id]);
+  if(anyOff){
+    const all = el('button','mini','Fix all ' + issues.filter(i=>!on[i.id]).length);
+    all.onclick = ()=>{ snapshot(); for(const i of issues) on[i.id] = true;
+      log('Applied every WebKit fix', 'ok'); rebuild(true); };
+    const rr = el('div','row'); rr.append(all); box.append(rr);
+  }
+}
+
+function renderPages(){
+  const bar = $('#pageBar'); bar.innerHTML = '';
+  if(!S.project) return;
+  const names = pageNames(S.project);
+  for(const n of names){
+    const built = S.allBuilt && S.allBuilt.pages.find(x => x.name === n);
+    const hasForm = !!(built && built.r.doc.querySelector('form'));
+    const b = el('button','pagetab' + (n === S.page ? ' on' : '') + (hasForm ? ' hasform' : ''));
+    b.append(el('i'), document.createTextNode(n));
+    b.title = hasForm ? n + ' — has a contact form' : n;
+    b.onclick = ()=>{
+      if(n === S.page) return;
+      S.page = n; S.sel = null; S.selKey = null; S.scrollY = 0;
+      log('Editing ' + n);
+      rebuild(true);
+    };
+    bar.append(b);
+  }
+  const add = el('button','pagetab','+ add pages');
+  add.title = 'Add more .html files to this site';
+  add.onclick = ()=> $('#fHtml').click();
+  bar.append(add);
+  if(names.length > 1 && S.page){
+    const del = el('button','pagetab','remove ' + S.page);
+    del.onclick = ()=>{
+      if(!confirm('Remove ' + S.page + ' from this site? The original file on disk is not touched.')) return;
+      snapshot();
+      delete S.project.pages[S.page];
+      S.page = pageNames(S.project)[0];
+      log('Removed that page from the site', 'warn');
+      rebuild(true);
+    };
+    bar.append(del);
+  }
 }
 
 function renderProblems(r){
@@ -2415,7 +2857,7 @@ function renderProblems(r){
   for(const p of r.problems){
     const d = el('div','item');
     d.append(el('span','tag edited', p.kind), el('div','meta'), el('span'));
-    d.children[1].append(el('div','nm', p.msg), el('div','sub', p.ref));
+    d.children[1].append(el('div','nm', p.msg), el('div','sub', (p.page ? p.page + ' · ' : '') + p.ref));
     box.append(d);
   }
 }
@@ -2431,7 +2873,7 @@ function renderImages(r){
   const box = $('#imgList'); box.innerHTML = '';
   if(!r.slots.length){ box.append(el('div','empty','No images on this page yet.')); return; }
   for(const slot of r.slots){
-    const ov = S.project.images[slot.key];
+    const ov = CUR().images[slot.key];
     const row = el('div','item' + (S.selKey===slot.key ? ' sel':''));
     row.append(slotThumb(slot));
     const meta = el('div','meta');
@@ -2492,10 +2934,13 @@ function effectiveNudge(rec, prop){
   return null;
 }
 function nudgeRecord(path){
-  let rec = S.project.nudges[path];
+  const pg = CUR();
+  let rec = pg.nudges[path];
   if(!rec){
-    S.project.nudgeSeq = (S.project.nudgeSeq || 0) + 1;
-    rec = S.project.nudges[path] = {id:'n' + S.project.nudgeSeq, desktop:{}, tablet:{}, phone:{}};
+    pg.nudgeSeq = (pg.nudgeSeq || 0) + 1;
+    /* ids carry the page name so two pages cannot collide in one stylesheet */
+    rec = pg.nudges[path] = {id:'n' + U.slug(pg.name.replace(/\.html?$/i,''),'p').slice(0,10) + '-' + pg.nudgeSeq,
+                             desktop:{}, tablet:{}, phone:{}};
   }
   for(const b of NUDGE_BUCKETS) if(!rec[b]) rec[b] = {};
   return rec;
@@ -2528,13 +2973,13 @@ function doNudge(mode, prop, sign, shift){
   sendPv({t:'nudge', mode, prop, path:S.sel.path, step: sign * nudgeStep(shift)});
 }
 function nudgesFor(path){
-  return Object.entries(S.project.nudges).filter(([k, rec]) => k === path || rec.via === path);
+  return Object.entries(CUR().nudges).filter(([k, rec]) => k === path || rec.via === path);
 }
 function clearNudge(path){
   const mine = nudgesFor(path);
   if(!mine.length) return;
   snapshot();
-  for(const [k] of mine) delete S.project.nudges[k];
+  for(const [k] of mine) delete CUR().nudges[k];
   log('Cleared ' + mine.length + ' spacing adjustment' + (mine.length===1?'':'s') + ' made for this element');
   rebuild(true); renderElement();
 }
@@ -2543,12 +2988,12 @@ function renderElement(){
   const box = $('#elBody'); box.innerHTML = '';
   const sel = S.sel;
   if(!sel || !S.project){ box.append(el('div','empty','Click anything in the preview.')); return; }
-  const over = (S.project.styles[sel.path] || {});
+  const over = (CUR().styles[sel.path] || {});
   const setDecl = (prop, val, label)=>{
     snapshot();
-    const cur = S.project.styles[sel.path] || (S.project.styles[sel.path] = Object.create(null));
+    const cur = CUR().styles[sel.path] || (CUR().styles[sel.path] = Object.create(null));
     if(val === '' || val == null) delete cur[prop]; else cur[prop] = val;
-    if(!Object.keys(cur).length) delete S.project.styles[sel.path];
+    if(!Object.keys(cur).length) delete CUR().styles[sel.path];
     log(label, 'ok');
     sendPv({t:'styleLive', path:sel.path, decls:{[prop]: val || ''}});
     rebuild(false);
@@ -2686,13 +3131,13 @@ function renderElement(){
     warn.style.borderLeftColor = 'var(--warn)';
     box.append(warn);
   }
-  const nudgeCount = Object.keys(S.project.nudges).length;
+  const nudgeCount = Object.keys(CUR().nudges).length;
   if(nudgeCount){
     const rowAll = el('div','row');
     const all = el('button','mini','Remove all ' + nudgeCount + ' spacing adjustment' + (nudgeCount===1?'':'s'));
     all.onclick = ()=>{
       if(!confirm('Remove every spacing adjustment on this page?')) return;
-      snapshot(); S.project.nudges = Object.create(null);
+      snapshot(); CUR().nudges = Object.create(null);
       log('Removed every spacing adjustment', 'warn'); rebuild(true); renderElement();
     };
     rowAll.append(all); box.append(rowAll);
@@ -2703,7 +3148,7 @@ function renderElement(){
     box.append(el('div','lbl','Changes here'));
     for(const [k,v] of Object.entries(over)) box.append(el('div','sub', k + ': ' + v));
     const rst = el('button','mini','Undo all changes to this element');
-    rst.onclick = ()=>{ snapshot(); delete S.project.styles[sel.path];
+    rst.onclick = ()=>{ snapshot(); delete CUR().styles[sel.path];
       log('Cleared every change on ' + sel.path); rebuild(true); renderElement(); };
     const rrow = el('div','row'); rrow.append(rst); box.append(rrow);
   }
@@ -2721,7 +3166,7 @@ addEventListener('message', (e)=>{
   const m = e.data || {};
   if(m.t === 'edit'){
     snapshot();
-    S.project.edits[m.path] = m.html;
+    CUR().edits[m.path] = m.html;
     log('Text updated at ' + m.path);
     rebuild(false);            // the preview already shows it; don't reload
   }
@@ -2755,7 +3200,7 @@ addEventListener('message', (e)=>{
   }
   else if(m.t === 'style'){
     snapshot();
-    const cur = S.project.styles[m.path] || (S.project.styles[m.path] = Object.create(null));
+    const cur = CUR().styles[m.path] || (CUR().styles[m.path] = Object.create(null));
     for(const k in m.decls) cur[k] = m.decls[k];
     log('Resized ' + m.path + ' — ' + Object.entries(m.decls).map(([k,v])=>k+':'+v).join(', '), 'ok');
     rebuild(false);              // the preview already shows the new size
@@ -2842,7 +3287,7 @@ function verifyNudges(report){
   for(const want of pending){
     const got = report.find(r=>r.path === want.path && r.prop === want.prop);
     if(!got || Math.abs(got.got - want.value) < 0.6) continue;
-    const rec = S.project.nudges[want.path];
+    const rec = CUR().nudges[want.path];
     if(!rec) continue;
     if(rec.important){ stuck.push(rec.id + ' ' + want.prop); continue; }
     rec.important = true; escalated++;
@@ -2877,27 +3322,29 @@ function bindSeo(){
   const push = (fn, label)=>{ snapshot(); fn(); log(label); rebuild(true); renderSeo(); };
   const tie = (id, key, label)=>{
     const f = $('#'+id);
-    f.onchange = ()=> push(()=> S.project.head[key] = f.value.trim(), label);
+    f.onchange = ()=> push(()=> CUR().head[key] = f.value.trim(), label);
     f.oninput = ()=> renderSerp();
   };
   tie('seoTitle','title','Page title updated');
   tie('seoDesc','description','Meta description updated');
-  tie('seoCanonical','canonical','Site address updated');
   tie('seoRobots','robots','Search visibility updated');
-  tie('seoLang','lang','Page language updated');
-  $('#seoOgImage').onchange = ()=> push(()=> S.project.head.ogImage = $('#seoOgImage').value, 'Sharing image updated');
+  const oc = $('#seoCanonical');
+  oc.onchange = ()=> push(()=> S.project.origin = oc.value.trim(), 'Site address updated for every page');
+  const lg = $('#seoLang');
+  lg.onchange = ()=> push(()=> S.project.lang = lg.value.trim(), 'Site language updated');
+  $('#seoOgImage').onchange = ()=> push(()=> CUR().head.ogImage = $('#seoOgImage').value, 'Sharing image updated');
   const box = $('#bizFields');
   for(const [key, label, ph] of BIZ_FIELDS){
     box.append(el('div','lbl', label));
     const f = el(key === 'sameAs' || key === 'hours' ? 'textarea' : 'input', 'field');
     if(f.tagName === 'TEXTAREA') f.rows = 2;
     f.placeholder = ph; f.id = 'biz_' + key;
-    f.onchange = ()=> push(()=> S.project.head.biz[key] = f.value.trim(), 'Business ' + label.toLowerCase() + ' updated');
+    f.onchange = ()=> push(()=> S.project.biz[key] = f.value.trim(), 'Business ' + label.toLowerCase() + ' updated');
     box.append(f);
   }
 }
 function renderSerp(){
-  const h = S.project ? S.project.head : blankHead();
+  const h = CUR() ? CUR().head : blankPageHead();
   const t = ($('#seoTitle').value || h.title || '(no title yet)');
   const d = ($('#seoDesc').value || h.description || 'Google will pick a sentence from the page instead.');
   const u = (h.canonical || 'https://example.com').replace(/^https?:\/\//,'');
@@ -2914,10 +3361,12 @@ function renderSerp(){
 function renderSeo(){
   if(!S.project) return;
   bindSeo();
-  const h = S.project.head;
+  const h = CUR().head;
   $('#seoTitle').value = h.title; $('#seoDesc').value = h.description;
-  $('#seoCanonical').value = h.canonical; $('#seoRobots').value = h.robots; $('#seoLang').value = h.lang;
-  for(const [key] of BIZ_FIELDS){ const f = $('#biz_'+key); if(f) f.value = h.biz[key] || ''; }
+  $('#seoCanonical').value = S.project.origin || '';
+  $('#seoRobots').value = h.robots;
+  $('#seoLang').value = S.project.lang || '';
+  for(const [key] of BIZ_FIELDS){ const f = $('#biz_'+key); if(f) f.value = S.project.biz[key] || ''; }
   const sel = $('#seoOgImage'); sel.innerHTML = '';
   const none = el('option', null, 'No sharing image'); none.value = '';
   sel.append(none);
@@ -2926,6 +3375,7 @@ function renderSeo(){
     o.value = hash; sel.append(o);
   }
   sel.value = h.ogImage || '';
+  $('#seoWhich').textContent = 'Search result — ' + S.page;
   renderSerp();
   const audit = (S.built && S.built.seo) || [];
   const box = $('#seoAudit'); box.innerHTML = '';
@@ -2970,13 +3420,14 @@ function renderForm(){
   const box = $('#fmStatus'); box.innerHTML = '';
   if(!f.enabled) return;
   const issues = [];
-  const hasForm = S.built && S.built.doc && S.built.doc.querySelector('form');
-  if(!hasForm) issues.push('This page has no <form>. SETUP.md in the export includes markup you can paste in.');
+  const withForm = (S.allBuilt ? S.allBuilt.pages.filter(x => x.r.doc.querySelector('form')).map(x => x.name) : []);
+  if(!withForm.length) issues.push('No page in this site has a <form>. SETUP.md in the export includes markup you can paste in.');
   if(!f.to) issues.push('No recipient yet, so nobody receives the enquiries.');
   if(!f.from) issues.push('No sender address yet. It must be on a domain you have onboarded to Email Routing.');
   if(f.turnstile && !f.siteKey) issues.push('Turnstile is on but has no site key.');
   if(!issues.length){
-    box.append(el('div','note','Ready. The export will include functions/api/contact.js and a SETUP.md checklist with these values filled in.'));
+    box.append(el('div','note','Ready. ' + withForm.length + ' page' + (withForm.length===1?'':'s') + ' will post to /api/contact — ' +
+      withForm.join(', ') + '. One function and one set of secrets covers all of them. The export includes functions/api/contact.js and a SETUP.md with these values filled in.'));
   }else{
     for(const i of issues){ const d = el('div','item'); d.append(el('span','tag edited','fix'), el('div','meta'), el('span'));
       d.children[1].append(el('div','nm', i)); box.append(d); }
@@ -2988,7 +3439,7 @@ function renderForm(){
    ========================================================================== */
 function openPicker(slot){
   S.pickKey = slot.key; S.selKey = slot.key;
-  const ov = S.project.images[slot.key];
+  const ov = CUR().images[slot.key];
   $('#mImgTitle').textContent = 'Change image — ' + slot.label;
   $('#mImgAlt').value = ov && ov.alt != null ? ov.alt : (slot.kind==='img' ? (slot.alt||'') : '');
   $('#mImgAlt').disabled = slot.kind !== 'img';
@@ -3000,8 +3451,8 @@ function openPicker(slot){
                             : (slot.alt ? 'This is the page’s own wording.' : 'This image has no alt text yet.'));
   $('#mImgInfo').textContent = slot.hidden ? 'Currently hidden.' :
     (slot.effective||'').startsWith('data:') ? 'Currently an embedded image.' : 'Currently ' + (slot.effective||'—').slice(0,70);
-  const cur = S.project.images[slot.key];
-  const curHash = (cur && cur.hash) || (S.project.srcIndex && S.project.srcIndex[slot.src]);
+  const cur = CUR().images[slot.key];
+  const curHash = (cur && cur.hash) || (CUR().srcIndex && CUR().srcIndex[slot.src]);
   const fn = $('#mImgFile');
   fn.disabled = !curHash;
   fn.value = curHash && S.assets[curHash] ? (S.assets[curHash].slug || U.slug(S.assets[curHash].name)) : '';
@@ -3032,7 +3483,7 @@ function setImage(hash, name){
   snapshot();
   const slot = (S.built.slots||[]).find(s=>s.key===key);
   const alt = $('#mImgAlt').disabled ? undefined : ($('#mImgAlt').value || humanAlt(name));
-  S.project.images[key] = {hash, alt};
+  CUR().images[key] = {hash, alt};
   if(S.assets[hash] && !S.assets[hash].slug) S.assets[hash].slug = U.slug(alt || name, 'image');
   if(alt !== undefined) $('#mImgAlt').value = alt;
   log('Image replaced at ' + key + ' → ' + hash.slice(0,12) + '.' + U.extFor(S.assets[hash].mime), 'ok');
@@ -3051,14 +3502,14 @@ $('#fImg').onchange = async (e)=>{
 };
 $('#mImgHide').onclick = ()=>{
   if(!S.pickKey) return;
-  snapshot(); S.project.images[S.pickKey] = {hidden:true};
+  snapshot(); CUR().images[S.pickKey] = {hidden:true};
   log('Image hidden at ' + S.pickKey);
   const k = S.pickKey; rebuild(true);
   openPicker((S.built.slots||[]).find(s=>s.key===k));
 };
 $('#mImgReset').onclick = ()=>{
   if(!S.pickKey) return;
-  snapshot(); delete S.project.images[S.pickKey];
+  snapshot(); delete CUR().images[S.pickKey];
   log('Original image restored at ' + S.pickKey);
   const k = S.pickKey; rebuild(true);
   openPicker((S.built.slots||[]).find(s=>s.key===k));
@@ -3067,13 +3518,13 @@ function commitAlt(){
   const key = S.pickKey; if(!key) return;
   const slot = (S.built.slots||[]).find(s=>s.key===key);
   if(!slot || slot.kind !== 'img') return;
-  const ov = S.project.images[key];
+  const ov = CUR().images[key];
   if(ov && ov.hidden) return;
   const val = $('#mImgAlt').value;
   const current = ov && ov.alt != null ? ov.alt : (slot.alt || '');
   if(val === current) return;
   snapshot();
-  if(ov) ov.alt = val; else S.project.images[key] = {alt:val};
+  if(ov) ov.alt = val; else CUR().images[key] = {alt:val};
   log('Alt text at ' + key + ' set to ' + (val ? '“' + val + '”' : 'empty, which marks it decorative'), 'ok');
   rebuild(false);
   const again = (S.built.slots||[]).find(s=>s.key===key);
@@ -3099,30 +3550,39 @@ function safeName(){
   return (S.project.name || 'site').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'site';
 }
 function verifyDeterminism(mode){
-  const a = build(S.project, S.assets, mode);
-  const b = build(S.project, S.assets, mode);
-  if(a.html !== b.html){ fail('Rebuild is not deterministic — two builds differed. Not exporting.'); return null; }
+  const a = buildAll(S.project, S.assets, mode);
+  const b = buildAll(S.project, S.assets, mode);
+  for(let i = 0; i < a.pages.length; i++){
+    if(a.pages[i].r.html !== b.pages[i].r.html){
+      fail('Rebuild is not deterministic on ' + a.pages[i].name + '. Not exporting.'); return null;
+    }
+  }
   return a;
 }
 $('#btnExportSingle').onclick = ()=>{
-  const r = verifyDeterminism('single'); if(!r) return;
-  if(r.problems.length) fail(r.problems.length + ' problem(s) in this build — check the Info panel before you send this out.');
-  const size = download(safeName()+'.html', [r.html], 'text/html');
-  log('Exported one file — ' + safeName() + '.html, ' + U.fmtBytes(size) + ' with every image embedded', 'ok');
+  const all = verifyDeterminism('single'); if(!all) return;
+  if(all.problems.length) fail(all.problems.length + ' problem(s) in this build — check the Info panel before you send this out.');
+  const pg = all.pages.find(x => x.name === S.page) || all.pages[0];
+  const nm = safeName() + (pg.name === 'index.html' ? '' : '-' + pg.name.replace(/\.html?$/i,'')) + '.html';
+  const size = download(nm, [pg.r.html], 'text/html');
+  log('Exported ' + pg.name + ' as one file — ' + nm + ', ' + U.fmtBytes(size) + ' with every image embedded.' +
+      (all.pages.length > 1 ? ' Links to the other pages will not work in a single file; use the zip for that.' : ''), 'ok');
 };
 $('#btnExportZip').onclick = ()=>{
-  const r = verifyDeterminism('folder'); if(!r) return;
-  if(r.problems.length) fail(r.problems.length + ' problem(s) in this build — check the Info panel before you upload this.');
-  const imgs = [...r.files.values()].sort((a,b)=>a.name<b.name?-1:1);
-  const extras = [...r.extras.values()].sort((a,b)=>a.name<b.name?-1:1);
-  const files = [{name:'index.html', data:U.utf8(r.html)}, ...imgs, ...extras];
+  const all = verifyDeterminism('folder'); if(!all) return;
+  if(all.problems.length) fail(all.problems.length + ' problem(s) in this build — check the Info panel before you upload this.');
+  const r = all;
+  const imgs = [...all.files.values()].sort((a,b)=>a.name<b.name?-1:1);
+  const extras = [...all.extras.values()].sort((a,b)=>a.name<b.name?-1:1);
+  const htmls = all.pages.map(pg => ({name:pg.name, data:U.utf8(pg.r.html)}));
+  const files = [...htmls, ...imgs, ...extras];
   const zip = U.zip(files);
   const size = download(safeName()+'.zip', [zip], 'application/zip');
   const imgBytes = imgs.reduce((n,f)=>n+f.data.length,0);
-  log('Exported folder — index.html + ' + imgs.length + ' image' + (imgs.length===1?'':'s') +
+  log('Exported folder — ' + htmls.length + ' page' + (htmls.length===1?'':'s') + ' + ' + imgs.length + ' image' + (imgs.length===1?'':'s') +
       ' (' + U.fmtBytes(imgBytes) + ')' + (extras.length ? ' + ' + extras.map(f=>f.name).join(', ') : '') +
       ', zip ' + U.fmtBytes(size) + '. Image names carry a content hash, so unchanged pictures keep their filename on the next deploy.', 'ok');
-  if(r.formOn) log('The contact form is wired to /api/contact. Read SETUP.md in the zip before you deploy — it needs four secrets on the Pages project.', 'warn');
+  if(S.project.form && S.project.form.enabled) log('The contact form is wired to /api/contact. Read SETUP.md in the zip before you deploy — it needs four secrets on the Pages project.', 'warn');
 };
 
 /* ==========================================================================
@@ -3130,16 +3590,25 @@ $('#btnExportZip').onclick = ()=>{
    ========================================================================== */
 function projectForSave(){
   const p = S.project;
-  const used = new Set(Object.values(p.images).map(o=>o && o.hash).filter(Boolean));
+  const used = new Set();
+  for(const n of pageNames(p))
+    for(const o of Object.values(p.pages[n].images)) if(o && o.hash) used.add(o.hash);
+  if(p.pages[pageNames(p)[0]] && p.pages[pageNames(p)[0]].head.ogImage) used.add(p.pages[pageNames(p)[0]].head.ogImage);
+  for(const n of pageNames(p)) if(p.pages[n].head.ogImage) used.add(p.pages[n].head.ogImage);
   const assets = {};
   for(const h of used) if(S.assets[h]) assets[h] = S.assets[h];
+  /* srcIndex is derived from each page's HTML, so it is never written out. */
+  const pages = {};
+  for(const n of pageNames(p)){
+    const g = p.pages[n];
+    pages[n] = {name:g.name, originalHtml:g.originalHtml, edits:g.edits, images:g.images,
+                styles:g.styles, nudges:g.nudges, nudgeSeq:g.nudgeSeq,
+                compat:g.compat, head:g.head};
+  }
   return {
-    v:1, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
-    originalHtml:p.originalHtml,
-    edits:p.edits, images:p.images, colors:p.colors, styles:p.styles,
-    nudges:p.nudges, nudgeSeq:p.nudgeSeq,
-    head:p.head, form:p.form, assets
-    /* srcIndex is derived from originalHtml, so it is never written out */
+    v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
+    pages, colors:p.colors, biz:p.biz, origin:p.origin, lang:p.lang,
+    form:p.form, assets
   };
 }
 async function saveProject(silent){
@@ -3193,8 +3662,11 @@ $('#nameField').onchange = ()=>{
 $('#btnOpenHtml').onclick = $('#dzHtml').onclick = ()=> $('#fHtml').click();
 $('#btnOpenProj').onclick = $('#dzProj').onclick = ()=> $('#fProj').click();
 $('#fHtml').onchange = async (e)=>{
-  const f = e.target.files[0]; e.target.value='';
-  if(f) openHtml(await f.text(), f.name.replace(/\.html?$/i,''));
+  const list = [...e.target.files]; e.target.value='';
+  if(!list.length) return;
+  const files = [];
+  for(const f of list) files.push({name:f.name, html:await f.text()});
+  if(S.project) addPagesFrom(files); else openHtmlFiles(files);
 };
 $('#fProj').onchange = async (e)=>{
   const f = e.target.files[0]; e.target.value='';
@@ -3206,11 +3678,20 @@ const dz = $('#dropzone');
 ['dragenter','dragover'].forEach(ev=> addEventListener(ev, e=>{ e.preventDefault(); dz.classList.add('drag'); dz.style.display='grid'; }));
 ['dragleave','drop'].forEach(ev=> addEventListener(ev, e=>{ e.preventDefault(); dz.classList.remove('drag'); if(ev==='dragleave' && S.project) dz.style.display='none'; }));
 addEventListener('drop', async (e)=>{
-  const f = e.dataTransfer.files[0];
-  if(!f){ if(S.project) dz.style.display='none'; return; }
-  if(/\.json$/i.test(f.name)){ try{ openProjectData(JSON.parse(await f.text())); }catch(err){ fail('That .json is not readable', err); } }
-  else if(/\.html?$/i.test(f.name)) openHtml(await f.text(), f.name.replace(/\.html?$/i,''));
-  else { fail('Drop an .html file or a .json project — ' + f.name + ' is neither'); if(S.project) dz.style.display='none'; }
+  const list = [...e.dataTransfer.files];
+  if(!list.length){ if(S.project) dz.style.display='none'; return; }
+  const proj = list.find(f => /\.json$/i.test(f.name));
+  if(proj){
+    try{ openProjectData(JSON.parse(await proj.text())); }catch(err){ fail('That .json is not readable', err); }
+    return;
+  }
+  const html = list.filter(f => /\.html?$/i.test(f.name));
+  const other = list.filter(f => !/\.html?$/i.test(f.name));
+  for(const f of other) fail('Ignored ' + f.name + ' — drop .html pages or a .json project');
+  if(!html.length){ if(S.project) dz.style.display='none'; return; }
+  const files = [];
+  for(const f of html) files.push({name:f.name, html:await f.text()});
+  if(S.project) addPagesFrom(files); else openHtmlFiles(files);
 });
 
 /* ==========================================================================
@@ -3380,10 +3861,21 @@ function runTests(){
   const savedAssets = S.assets;
   S.assets = Object.create(null);
   try{
-    const P = ()=>{
-      const p = newProject(FIXTURE, 'fixture');
-      indexSource(p);
+    /* A single page in the shape build() consumes, so these tests exercise the
+       same path the app does. PROJ() gives the whole site when that matters. */
+    const PROJ = (files)=>{
+      const p = newProject(null, 'fixture');
+      for(const f of (files || [{name:'index.html', html:FIXTURE}])){
+        const n = addPage(p, f.name, f.html);
+        indexSource(p.pages[n]);
+      }
       return p;
+    };
+    const P = ()=>{
+      const p = PROJ();
+      const v = pageView(p, 'index.html');
+      v.__project = p; v.__name = 'index.html';
+      return v;
     };
     const pathOfIn = (html, sel)=> pathOf(Model.parse(html).querySelector(sel));
 
@@ -3617,9 +4109,9 @@ function runTests(){
       return 'exactly 1 line differs';
     });
     T('An adjustment made on a neighbour is still filed under the element you moved', ()=>{
-      const saveP = S.project;
+      const saveP = S.project, saveN = S.page;
       try{
-        S.project = P();
+        S.project = PROJ(); S.page = 'index.html';
         S.sel = {path:'1.1.2'};
         S.vp = 0;
         /* the preview found that the element above was setting the gap */
@@ -3627,11 +4119,167 @@ function runTests(){
         const mine = nudgesFor('1.1.2');
         if(mine.length !== 1) throw new Error('not filed against the selected element');
         if(mine[0][0] !== '1.1.1') throw new Error('wrong element carries the rule');
-        if(S.project.nudges['1.1.1'].via !== '1.1.2') throw new Error('provenance not recorded');
+        if(CUR().nudges['1.1.1'].via !== '1.1.2') throw new Error('provenance not recorded');
         clearNudge('1.1.2');
-        if(Object.keys(S.project.nudges).length) throw new Error('reset left the neighbour rule behind');
+        if(Object.keys(CUR().nudges).length) throw new Error('reset left the neighbour rule behind');
         return 'rule sits on the neighbour, listed and cleared from the element you selected';
-      } finally { S.project = saveP; S.sel = null; }
+      } finally { S.project = saveP; S.page = saveN; S.sel = null; }
+    });
+    T('One image used on several pages is written out once', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE},
+                      {name:'services.html', html:FIXTURE},
+                      {name:'about.html', html:FIXTURE}]);
+      const a = finishAsset('image/jpeg', U.utf8('SHARED-LOGO'), 'logo.png', 200, 80, '');
+      S.assets[a.hash].slug = 'logo';
+      for(const n of ['index.html','services.html','about.html']){
+        const key = build(pageView(p, n), S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+        p.pages[n].images[key] = {hash:a.hash, alt:'Logo'};
+      }
+      const all = buildAll(p, S.assets, 'folder');
+      const logos = [...all.files.keys()].filter(k=>/logo\./.test(k));
+      if(logos.length !== 1) throw new Error('expected 1 shared file, got ' + logos.length);
+      for(const pg of all.pages)
+        if(!pg.r.html.includes(logos[0])) throw new Error(pg.name + ' does not point at it');
+      return '3 pages, 1 file: ' + logos[0];
+    });
+    T('A colour change applies to every page at once', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE}, {name:'services.html', html:FIXTURE}]);
+      p.colors['#2f6f4e'] = '#1a4a8f';
+      const all = buildAll(p, S.assets, 'folder');
+      for(const pg of all.pages){
+        if(!/rgba\(26, 74, 143, \.55\)/.test(pg.r.html)) throw new Error(pg.name + ' was not recoloured');
+      }
+      return 'both pages recoloured from one edit, alpha kept';
+    });
+    T('Edits on one page do not touch another', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE}, {name:'services.html', html:FIXTURE}]);
+      const before = buildAll(p, S.assets, 'folder').pages.find(x=>x.name==='services.html').r.html;
+      const doc = Model.parse(p.pages['index.html'].originalHtml);
+      p.pages['index.html'].edits[pathOf(doc.querySelector('h1'))] = 'CHANGED ON THE HOME PAGE';
+      const all = buildAll(p, S.assets, 'folder');
+      const home = all.pages.find(x=>x.name==='index.html').r.html;
+      const svc  = all.pages.find(x=>x.name==='services.html').r.html;
+      if(!/CHANGED ON THE HOME PAGE/.test(home)) throw new Error('the edit did not land');
+      if(/CHANGED ON THE HOME PAGE/.test(svc)) throw new Error('it leaked onto another page');
+      if(svc !== before) throw new Error('the other page changed anyway');
+      return 'one page changed, the other byte-identical';
+    });
+    T('Page filenames are kept, deduplicated and made safe', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE},
+                      {name:'Our Services.HTML', html:FIXTURE},
+                      {name:'/tmp/deep/contact', html:FIXTURE},
+                      {name:'index.html', html:FIXTURE}]);
+      const names = pageNames(p);
+      if(names[0] !== 'index.html') throw new Error('index should sort first');
+      if(!names.includes('our-services.html')) throw new Error('name not normalised: ' + names.join());
+      if(!names.includes('contact.html')) throw new Error('extension not added: ' + names.join());
+      if(!names.includes('index-2.html')) throw new Error('duplicate not renamed: ' + names.join());
+      return names.join(', ');
+    });
+    T('Reopening keeps every untouched photo, not just the replaced ones', ()=>{
+      const saveP = S.project, saveN = S.page, saveA = S.assets;
+      try{
+        S.project = PROJ([{name:'index.html', html:FIXTURE}, {name:'services.html', html:FIXTURE}]);
+        S.page = 'index.html';
+        for(const n of pageNames(S.project)) indexSource(S.project.pages[n]);
+        const a = finishAsset('image/jpeg', U.utf8('REPLACEMENT'), 'new.jpg', 900, 600, '');
+        const key = build(pageView(S.project,'index.html'), S.assets, 'preview').slots.find(s=>s.kind==='img').key;
+        S.project.pages['index.html'].images[key] = {hash:a.hash, alt:'New'};
+        const before = buildAll(S.project, S.assets, 'folder');
+        const saved = JSON.parse(JSON.stringify(projectForSave()));
+        /* the .json only carries replacements; the page's own images must come
+           back from its HTML, and must not be wiped by loading the saved ones */
+        S.assets = Object.create(null);
+        for(const [h, v] of Object.entries(saved.assets)) S.assets[h] = v;
+        for(const n of Object.keys(saved.pages)) indexSource(saved.pages[n]);
+        const after = buildAll(saved, S.assets, 'folder');
+        if(after.problems.length) throw new Error(after.problems[0].msg);
+        for(let i = 0; i < before.pages.length; i++)
+          if(before.pages[i].r.html !== after.pages[i].r.html) throw new Error(before.pages[i].name + ' differs after reopening');
+        return before.pages.length + ' pages byte-identical, no missing image data';
+      } finally { S.project = saveP; S.page = saveN; S.assets = saveA; }
+    });
+    T('A saved one-page project still opens after multi-page support', ()=>{
+      const old = {v:1, id:'x', name:'old', createdAt:1, updatedAt:2,
+        originalHtml:FIXTURE, edits:{'1.0.0':'HELLO'}, images:{}, colors:{'#2f6f4e':'#1a4a8f'},
+        styles:{}, nudges:{}, nudgeSeq:0, compat:{}, assets:{},
+        head:{title:'Old title', description:'Old description', canonical:'https://old.example',
+              biz:{name:'Old Co'}, lang:'en'},
+        form:{enabled:false, to:'', from:'', subject:'', success:'', turnstile:false, siteKey:''}};
+      const p = migrate(old);
+      if(pageNames(p).length !== 1 || pageNames(p)[0] !== 'index.html') throw new Error('did not become one page');
+      if(p.pages['index.html'].edits['1.0.0'] !== 'HELLO') throw new Error('edits lost');
+      if(p.origin !== 'https://old.example') throw new Error('site address lost');
+      if(p.biz.name !== 'Old Co') throw new Error('business details lost');
+      if(p.colors['#2f6f4e'] !== '#1a4a8f') throw new Error('colours lost');
+      indexSource(p.pages['index.html']);
+      const html = buildAll(p, S.assets, 'folder').pages[0].r.html;
+      if(!/HELLO/.test(html) || !/Old title/.test(html)) throw new Error('rebuild lost something');
+      return 'migrated with edits, colours, address and business details intact';
+    });
+    T('The WebKit grid-height fault is found, and safe grids are left alone', ()=>{
+      const doc = Model.parse('<!DOCTYPE html><html><head><style>' +
+        '.row{display:grid;grid-template-columns:260px 1fr}' +
+        '.row img{height:100%;min-height:260px;object-fit:cover}' +
+        '.safe{display:grid;grid-template-rows:320px 320px}' +
+        '.safe img{height:100%}' +
+        '.plain img{height:100%}' +
+        '.never{display:grid;grid-template-columns:1fr 1fr}' +
+        '.never img{height:100%}' +
+        '@media(max-width:900px){.row{grid-template-columns:1fr}}' +
+        '</style></head><body></body></html>');
+      const found = scanCompat(doc);
+      const sels = found.map(f=>f.sel);
+      if(!sels.includes('.row img')) throw new Error('missed the broken one');
+      if(sels.includes('.safe img')) throw new Error('flagged a grid with definite rows');
+      if(sels.includes('.plain img')) throw new Error('flagged an element that is not in a grid');
+      if(sels.includes('.never img')) throw new Error('flagged a grid that never collapses to one column');
+      if(found[0].media !== '(max-width:900px)') throw new Error('wrong breakpoint: ' + found[0].media);
+      if(found[0].fix !== '260px') throw new Error('should reuse min-height, got ' + found[0].fix);
+      return '1 of 4 flagged, at ' + found[0].media + ', fixed with height:' + found[0].fix;
+    });
+    T('The fix is written only when switched on, and never edits the original rule', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('</style>',
+        '.row{display:grid;grid-template-columns:200px 1fr}.row img{height:100%;min-height:180px}' +
+        '@media(max-width:700px){.row{grid-template-columns:1fr}}</style>');
+      indexSource(p);
+      let r = build(p, S.assets, 'single');
+      if(!r.compat.length) throw new Error('not detected');
+      p.compat[r.compat[0].id] = false;
+      if(/data-compat-block/.test(build(p, S.assets, 'single').html)) throw new Error('written after being switched off');
+      delete p.compat[r.compat[0].id];
+      r = build(p, S.assets, 'single');
+      if(!/@media \(max-width:700px\) \{\n {4}\.row img\{height:180px\}/.test(r.html)) throw new Error('fix not written: ' + r.compatCss);
+      if(!/\.row img\{height:100%;min-height:180px\}/.test(r.html)) throw new Error('the page\u2019s own rule was rewritten');
+      const twice = build(p, S.assets, 'single');
+      if(twice.html !== r.html) throw new Error('not deterministic');
+      /* the fix block must come after the page's own styles, or it loses */
+      if(r.html.lastIndexOf('data-compat-block') < r.html.indexOf('.row img{height:100%')) throw new Error('fix block is before the rule it overrides');
+      return 'one added rule, original untouched, byte-identical on rebuild';
+    });
+    T('Turning a browser fix off leaves the page byte-identical', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('</style>',
+        '.row{display:grid;grid-template-columns:200px 1fr}.row img{height:100%}' +
+        '@media(max-width:700px){.row{grid-template-columns:1fr}}</style>');
+      indexSource(p);
+      const id = build(p, S.assets, 'single').compat[0].id;
+      const withFix = build(p, S.assets, 'single').html;      // on by default
+      p.compat[id] = false;
+      const without = build(p, S.assets, 'single').html;
+      if(withFix === without) throw new Error('the fix did nothing');
+      if(/data-compat-block/.test(without)) throw new Error('residue left behind');
+      delete p.compat[id];
+      if(build(p, S.assets, 'single').html !== withFix) throw new Error('not restored');
+      return 'on by default, cleanly removable';
+    });
+    T('A fix kept for a rule that has gone is reported', ()=>{
+      const p = P();
+      p.compat['c9'] = true;
+      const r = build(p, S.assets, 'single');
+      if(!r.problems.some(x=>x.kind==='compat')) throw new Error('not reported');
+      return 'reported rather than silently ignored';
     });
     T('A container can be nudged, not just the text inside it', ()=>{
       const p = P();
@@ -3788,36 +4436,47 @@ function runTests(){
       if(!/viewport/i.test(msgs)) throw new Error('missed the viewport');
       return r.seo.length + ' items flagged';
     });
-    T('robots.txt and sitemap.xml are written once a site address is set', ()=>{
-      const p = P();
-      let r = build(p, S.assets, 'folder');
-      if(r.extras.has('sitemap.xml')) throw new Error('written without an address');
-      p.head.canonical = 'https://alvarezroofing.com/';
-      r = build(p, S.assets, 'folder');
-      const sm = new TextDecoder().decode(r.extras.get('sitemap.xml').data);
-      if(!/<loc>https:\/\/alvarezroofing.com\/<\/loc>/.test(sm)) throw new Error('bad sitemap: ' + sm);
-      const rb = new TextDecoder().decode(r.extras.get('robots.txt').data);
+    T('robots.txt and sitemap.xml cover every page of the site', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE},
+                      {name:'services.html', html:FIXTURE},
+                      {name:'contact.html', html:FIXTURE}]);
+      let all = buildAll(p, S.assets, 'folder');
+      if(all.extras.has('sitemap.xml')) throw new Error('written without a site address');
+      p.origin = 'https://alvarezroofing.com/';
+      p.pages['contact.html'].head.robots = 'noindex,nofollow';
+      all = buildAll(p, S.assets, 'folder');
+      const sm = new TextDecoder().decode(all.extras.get('sitemap.xml').data);
+      if(!/<loc>https:\/\/alvarezroofing.com\/<\/loc>/.test(sm)) throw new Error('root missing');
+      if(!/<loc>https:\/\/alvarezroofing.com\/services.html<\/loc>/.test(sm)) throw new Error('services missing');
+      if(/contact.html/.test(sm)) throw new Error('a noindex page was listed');
+      const rb = new TextDecoder().decode(all.extras.get('robots.txt').data);
       if(!/Sitemap: https:\/\/alvarezroofing.com\/sitemap.xml/.test(rb)) throw new Error('bad robots.txt');
-      return 'both written, pointing at the right origin';
+      const svc = all.pages.find(x=>x.name==='services.html').r.html;
+      if(!/<link rel="canonical" href="https:\/\/alvarezroofing.com\/services.html">/.test(svc)) throw new Error('per-page canonical missing');
+      return '3 pages, one site address, noindex page excluded';
     });
-    T('The contact form is rewritten and its function is written out', ()=>{
-      const p = P();
-      p.originalHtml = p.originalHtml.replace('<footer>',
+    T('Forms on several pages share one function and one set of secrets', ()=>{
+      const withForm = FIXTURE.replace('<footer>',
         '<form><input type="text" name="name"><input type="email" name="email">' +
         '<textarea name="message"></textarea><button type="submit">Send</button></form><footer>');
-      indexSource(p);
+      const p = PROJ([{name:'index.html', html:FIXTURE},
+                      {name:'contact.html', html:withForm},
+                      {name:'quote.html', html:withForm}]);
       p.form.enabled = true; p.form.to = 'owner@example.com'; p.form.from = 'forms@example.com';
-      const r = build(p, S.assets, 'folder');
-      if(!/<form data-contact-form="" action="\/api\/contact" method="post"/.test(r.html)) throw new Error('form not repointed');
-      if(!/name="company_website"/.test(r.html)) throw new Error('honeypot missing');
-      if(/challenges\.cloudflare\.com/.test(r.html)) throw new Error('Turnstile loaded when it was switched off');
-      const fn = new TextDecoder().decode(r.extras.get('functions/api/contact.js').data);
-      if(!/onRequestPost/.test(fn)) throw new Error('function has no POST handler');
-      if(!/email\/sending\/send/.test(fn)) throw new Error('function does not call Email Service');
-      if(!/replyTo/.test(fn)) throw new Error('no reply-to, so replies would go nowhere useful');
-      const md = new TextDecoder().decode(r.extras.get('SETUP.md').data);
+      const all = buildAll(p, S.assets, 'folder');
+      const page = (n)=> all.pages.find(x=>x.name===n).r.html;
+      for(const n of ['contact.html','quote.html']){
+        if(!/<form data-contact-form="" action="\/api\/contact" method="post"/.test(page(n))) throw new Error(n + ' not repointed');
+        if(!/name="company_website"/.test(page(n))) throw new Error(n + ' has no honeypot');
+      }
+      if(/data-contact-form/.test(page('index.html'))) throw new Error('a page with no form was altered');
+      const fns = [...all.extras.keys()].filter(k=>/contact\.js$/.test(k));
+      if(fns.length !== 1) throw new Error('expected one shared function, got ' + fns.length);
+      const fn = new TextDecoder().decode(all.extras.get('functions/api/contact.js').data);
+      if(!/onRequestPost/.test(fn) || !/email\/sending\/send/.test(fn) || !/replyTo/.test(fn)) throw new Error('function is incomplete');
+      const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
       if(!/owner@example.com/.test(md)) throw new Error('checklist not filled in');
-      return 'form repointed, honeypot added, function + checklist written';
+      return '2 forms, 1 function, 1 checklist';
     });
     T('A form field with no name is given one and reported', ()=>{
       const p = P();
@@ -3831,26 +4490,23 @@ function runTests(){
       return 'named "your-name" and flagged';
     });
     T('Turning Turnstile on adds the widget and the secret to the checklist', ()=>{
-      const p = P();
-      p.originalHtml = p.originalHtml.replace('<footer>', '<form><input name="name"></form><footer>');
-      indexSource(p);
+      const p = PROJ([{name:'index.html', html:FIXTURE.replace('<footer>', '<form><input name="name"></form><footer>')}]);
       p.form.enabled = true; p.form.turnstile = true; p.form.siteKey = '0xTEST';
-      const r = build(p, S.assets, 'folder');
-      if(!/class="cf-turnstile" data-sitekey="0xTEST"/.test(r.html)) throw new Error('widget missing');
-      if(!/challenges\.cloudflare\.com\/turnstile/.test(r.html)) throw new Error('script missing');
-      const md = new TextDecoder().decode(r.extras.get('SETUP.md').data);
+      const all = buildAll(p, S.assets, 'folder');
+      const html = all.pages[0].r.html;
+      if(!/class="cf-turnstile" data-sitekey="0xTEST"/.test(html)) throw new Error('widget missing');
+      if(!/challenges\.cloudflare\.com\/turnstile/.test(html)) throw new Error('script missing');
+      const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
       if(!/TURNSTILE_SECRET/.test(md)) throw new Error('checklist does not mention the secret');
       return 'widget, script and checklist entry';
     });
-    T('Switching the form off leaves the page exactly as it was', ()=>{
-      const p = P();
-      p.originalHtml = p.originalHtml.replace('<footer>', '<form><input name="name"></form><footer>');
-      indexSource(p);
-      const before = build(p, S.assets, 'folder');
-      p.form.enabled = true;
-      p.form.enabled = false;
-      const after = build(p, S.assets, 'folder');
-      if(before.html !== after.html) throw new Error('the page changed anyway');
+    T('Switching the form off leaves every page byte-identical', ()=>{
+      const proj = PROJ([{name:'index.html', html:FIXTURE.replace('<footer>', '<form><input name="name"></form><footer>')}]);
+      const before = buildAll(proj, S.assets, 'folder');
+      proj.form.enabled = true;
+      proj.form.enabled = false;
+      const after = buildAll(proj, S.assets, 'folder');
+      if(before.pages[0].r.html !== after.pages[0].r.html) throw new Error('the page changed anyway');
       if(after.extras.size) throw new Error('extra files written for a form that is off');
       return 'byte-identical, no extra files';
     });

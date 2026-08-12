@@ -313,6 +313,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <textarea class="field" id="seoDesc" rows="3" placeholder="What this business does and where, in one sentence."></textarea>
           <div class="lbl" style="margin-top:8px">Site address <span style="text-transform:none;letter-spacing:0">— for the whole site; each page gets its own URL from it</span></div>
           <input class="field" id="seoCanonical" placeholder="https://alvarezroofing.com">
+          <div class="hint" id="originNote" style="margin:4px 0 0"></div>
           <div class="row" style="margin-top:6px">
             <select class="field" id="seoRobots">
               <option value="">Let search engines list this page</option>
@@ -1398,8 +1399,38 @@ function setupNotes(project){
     '',
     '## 1. Deploy',
     '',
-    'Upload this whole folder to Cloudflare Pages. `index.html` is the site,',
-    '`images/` holds the pictures and `functions/api/contact.js` is the contact form.',
+    '`index.html` and the other .html files are the site, `images/` holds the pictures,',
+    'and `functions/api/contact.js` is the contact form.',
+    '',
+    '> **Drag-and-drop upload will not work for the form.** Cloudflare\u2019s dashboard',
+    '> uploader ignores the `functions/` folder \u2014 the pages go up fine, the form',
+    '> quietly does not. You will know this happened if Variables and secrets says',
+    '> \u201cVariables cannot be added to a Worker that only has static assets\u201d, or if',
+    '> visiting /api/contact returns a 404. Use one of these instead:',
+    '',
+    '### Option A \u2014 Wrangler, one command per deploy',
+    '',
+    'Install Node.js once from nodejs.org, then from inside this folder run:',
+    '',
+    '```',
+    'npx wrangler login',
+    'npx wrangler pages deploy . --project-name=' + ((project.name||'site').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'my-site'),
+    '```',
+    '',
+    'Run it from the folder that holds `index.html`, or the `functions/` folder is',
+    'not picked up. Every later deploy is just the second command again.',
+    '',
+    '### Option B \u2014 GitHub, no command line at all',
+    '',
+    '1. Create a repository on github.com and upload this folder through the website.',
+    '2. In Cloudflare: Workers & Pages > Create > Pages > Connect to Git, pick the repo.',
+    '3. Leave the build command empty and set the output directory to `/`.',
+    '',
+    'After that, replacing a file on GitHub redeploys the site on its own.',
+    '',
+    'Either way, do not create the project with drag-and-drop first: a project made',
+    'that way can be updated with Wrangler, but one created through Git cannot go',
+    'back to drag-and-drop.',
     '',
     '## 2. Let the domain send mail (once per client, about five minutes)',
     '',
@@ -1665,6 +1696,13 @@ function buildAll(project, assets, mode){
   }
   if(mode === 'folder'){
     const origin = (project.origin || '').replace(/\/+$/,'');
+    if(!origin){
+      /* Without a domain a sitemap would list paths with no host, which is
+         invalid, so these are skipped — but skipping quietly means shipping a
+         site with no sitemap and no canonical tags and not knowing it. */
+      problems.push({kind:'seo', ref:'site address',
+        msg:'No site address set, so robots.txt, sitemap.xml and every canonical tag were left out. Enter it in the SEO tab and export again.'});
+    }
     if(origin){
       const noindex = /noindex/i.test((project.pages[pageNames(project)[0]].head||{}).robots || '');
       extras.set('robots.txt', {name:'robots.txt', data:U.utf8(
@@ -3376,6 +3414,13 @@ function renderSeo(){
   }
   sel.value = h.ogImage || '';
   $('#seoWhich').textContent = 'Search result — ' + S.page;
+  const missing = !(S.project.origin||'').trim();
+  $('#seoCanonical').style.borderColor = missing ? 'var(--warn)' : '';
+  const note = $('#originNote');
+  note.textContent = missing
+    ? 'Needed before robots.txt, sitemap.xml or any canonical tag can be written.'
+    : 'Canonical tags, sitemap and robots.txt all use this.';
+  note.style.color = missing ? 'var(--warn)' : 'var(--ink-3)';
   renderSerp();
   const audit = (S.built && S.built.seo) || [];
   const box = $('#seoAudit'); box.innerHTML = '';
@@ -3426,6 +3471,9 @@ function renderForm(){
   if(!f.from) issues.push('No sender address yet. It must be on a domain you have onboarded to Email Routing.');
   if(f.turnstile && !f.siteKey) issues.push('Turnstile is on but has no site key.');
   if(!issues.length){
+    const warn = el('div','note','Deploying: the Cloudflare dashboard\u2019s drag-and-drop uploader ignores the functions/ folder, so the form will not work that way. Use "npx wrangler pages deploy ." from the unzipped folder, or connect a Git repo. SETUP.md walks through both.');
+    warn.style.borderLeftColor = 'var(--warn)';
+    box.append(warn);
     box.append(el('div','note','Ready. ' + withForm.length + ' page' + (withForm.length===1?'':'s') + ' will post to /api/contact — ' +
       withForm.join(', ') + '. One function and one set of secrets covers all of them. The export includes functions/api/contact.js and a SETUP.md with these values filled in.'));
   }else{
@@ -3582,6 +3630,9 @@ $('#btnExportZip').onclick = ()=>{
   log('Exported folder — ' + htmls.length + ' page' + (htmls.length===1?'':'s') + ' + ' + imgs.length + ' image' + (imgs.length===1?'':'s') +
       ' (' + U.fmtBytes(imgBytes) + ')' + (extras.length ? ' + ' + extras.map(f=>f.name).join(', ') : '') +
       ', zip ' + U.fmtBytes(size) + '. Image names carry a content hash, so unchanged pictures keep their filename on the next deploy.', 'ok');
+  if(!(S.project.origin||'').trim())
+    fail('Exported without a site address, so this zip has no robots.txt, no sitemap.xml and no canonical tags. Set it in the SEO tab and export again.');
+  if(S.project.form && S.project.form.enabled) log('Do not drag-and-drop this zip into the Cloudflare dashboard \u2014 that uploader ignores the functions/ folder and the form will not work. Deploy with "npx wrangler pages deploy ." or connect a Git repo. SETUP.md has both.', 'warn');
   if(S.project.form && S.project.form.enabled) log('The contact form is wired to /api/contact. Read SETUP.md in the zip before you deploy — it needs four secrets on the Pages project.', 'warn');
 };
 
@@ -4180,6 +4231,7 @@ function runTests(){
       const saveP = S.project, saveN = S.page, saveA = S.assets;
       try{
         S.project = PROJ([{name:'index.html', html:FIXTURE}, {name:'services.html', html:FIXTURE}]);
+        S.project.origin = 'https://example.com';     // else the SEO notice fires
         S.page = 'index.html';
         for(const n of pageNames(S.project)) indexSource(S.project.pages[n]);
         const a = finishAsset('image/jpeg', U.utf8('REPLACEMENT'), 'new.jpg', 900, 600, '');
@@ -4194,6 +4246,7 @@ function runTests(){
         for(const n of Object.keys(saved.pages)) indexSource(saved.pages[n]);
         const after = buildAll(saved, S.assets, 'folder');
         if(after.problems.length) throw new Error(after.problems[0].msg);
+        if(!after.extras.has('sitemap.xml')) throw new Error('site address lost in the round trip');
         for(let i = 0; i < before.pages.length; i++)
           if(before.pages[i].r.html !== after.pages[i].r.html) throw new Error(before.pages[i].name + ' differs after reopening');
         return before.pages.length + ' pages byte-identical, no missing image data';
@@ -4435,6 +4488,18 @@ function runTests(){
       if(!/description/i.test(msgs)) throw new Error('missed the description');
       if(!/viewport/i.test(msgs)) throw new Error('missed the viewport');
       return r.seo.length + ' items flagged';
+    });
+    T('Exporting with no site address says so instead of quietly skipping', ()=>{
+      const p = PROJ([{name:'index.html', html:FIXTURE}]);
+      const all = buildAll(p, S.assets, 'folder');
+      if(all.extras.has('sitemap.xml')) throw new Error('written without an address');
+      const said = all.problems.find(x => x.kind === 'seo' && /site address/i.test(x.msg));
+      if(!said) throw new Error('omission was not reported');
+      p.origin = 'https://example.com';
+      const ok = buildAll(p, S.assets, 'folder');
+      if(!ok.extras.has('sitemap.xml')) throw new Error('still not written');
+      if(ok.problems.some(x => x.kind === 'seo')) throw new Error('still complaining once set');
+      return 'reported when missing, written once set';
     });
     T('robots.txt and sitemap.xml cover every page of the site', ()=>{
       const p = PROJ([{name:'index.html', html:FIXTURE},

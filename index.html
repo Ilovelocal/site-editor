@@ -327,7 +327,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <p class="hint">Rewrites this page's <code>&lt;form&gt;</code> to post to a Cloudflare Pages Function that emails the owner. No third party, no database.</p>
           <label class="row"><input type="checkbox" id="fmEnabled"> <span>Wire up the contact form on export</span></label>
           <div id="fmBody" style="display:none">
-            <div class="lbl" style="margin-top:10px">Send enquiries to</div>
+            <div class="lbl" style="margin-top:10px">Send enquiries to <span style="text-transform:none;letter-spacing:0">— the owner’s inbox, verified in Cloudflare</span></div>
             <input class="field" id="fmTo" placeholder="owner@alvarezroofing.com">
             <div class="lbl" style="margin-top:8px">Send them from</div>
             <input class="field" id="fmFrom" placeholder="forms@alvarezroofing.com">
@@ -1081,8 +1081,8 @@ function contactFunction(form){
 "// Required secrets on the Pages project (Settings > Variables and secrets):",
 "//   CF_ACCOUNT_ID      your Cloudflare account ID",
 "//   CF_EMAIL_TOKEN     an API token with Send email permission",
-"//   FORM_TO            where enquiries go (a verified destination address)",
-"//   FORM_FROM          an address on a domain with Email Routing enabled",
+"//   FORM_TO            where enquiries go (must be a VERIFIED destination address)",
+"//   FORM_FROM          any address on a domain onboarded to Email Routing",
 "// Optional:",
 "//   TURNSTILE_SECRET   set this only if the form shows a Turnstile widget",
 "",
@@ -1217,14 +1217,26 @@ function setupNotes(project){
     '',
     '## 2. Let the domain send mail (once per client, about five minutes)',
     '',
-    '1. Cloudflare dashboard, pick **' + domain + '**, then **Email > Email Routing**, and enable it.',
-    '2. Under **Destination addresses**, add **' + (f.to || 'the owner\u2019s email address') + '** and click the link in the confirmation email.',
-    '   Sending to a verified destination is free and does not count against any quota.',
+    'The domain\u2019s DNS must already be on Cloudflare. Then:',
+    '',
+    '1. Dashboard > **Compute > Email Service > Email Routing** > **Onboard Domain**, and pick **' + domain + '**.',
+    '   Cloudflare adds the MX, SPF and DKIM records itself. Usually live in 5-15 minutes.',
+    '2. Under **Destination addresses**, add **' + (f.to || 'the owner\u2019s email address') + '**.',
+    '   Cloudflare emails that address; the owner must click the link in it. Nothing works until they do.',
+    '',
+    'That is all the email setup this form needs. You do NOT need to onboard a sending',
+    'domain and you do NOT need a paid plan: sending to a verified destination is free',
+    'on every plan and does not count toward any quota or daily limit.',
+    '',
+    'A routing rule is not required either. Rules forward mail *arriving* at the domain,',
+    'which is separate from this form. Add one anyway if the owner wants',
+    'info@' + domain + ' to reach their inbox.',
     '',
     '## 3. Create the API token (once ever, not once per client)',
     '',
-    'My Profile > API Tokens > Create Token > Custom token, with **Send email** permission',
-    'on your account. Reuse the same token on every site you deploy.',
+    'My Profile > API Tokens > Create Token > Custom token, with the **Send email**',
+    'permission on your account. Reuse the same token for every site you deploy,',
+    'as long as those domains all sit in this same Cloudflare account.',
     '',
     '## 4. Paste the secrets into the Pages project',
     '',
@@ -1248,8 +1260,12 @@ function setupNotes(project){
   L.push('');
   L.push('## Notes');
   L.push('');
-  L.push('- `FORM_FROM` must be on a domain that has Email Routing switched on. It does not');
-  L.push('  need to be a real mailbox.');
+  L.push('- `FORM_FROM` must be on a domain onboarded to Email Routing \u2014 you can only send');
+  L.push('  from your routing domains. It need not be a real mailbox; nothing is delivered to it.');
+  L.push('- `FORM_TO` must be a **verified destination address**. Sending anywhere else needs a');
+  L.push('  sending domain onboarded and a Workers Paid plan, which this form does not use.');
+  L.push('- If the owner changes their email later, verify the new address first, then update');
+  L.push('  `FORM_TO` and redeploy. It will fail until both are done.');
   L.push('- Replying to an enquiry goes to the customer, not to ' + (f.from || 'the from address') + '.');
   L.push('- There is no database, so the email is the only copy of an enquiry.');
   L.push('- Cloudflare Email Service was still in beta when this was generated.');
@@ -2957,7 +2973,7 @@ function renderForm(){
   const hasForm = S.built && S.built.doc && S.built.doc.querySelector('form');
   if(!hasForm) issues.push('This page has no <form>. SETUP.md in the export includes markup you can paste in.');
   if(!f.to) issues.push('No recipient yet, so nobody receives the enquiries.');
-  if(!f.from) issues.push('No sender address yet. It must be on a domain with Email Routing switched on.');
+  if(!f.from) issues.push('No sender address yet. It must be on a domain you have onboarded to Email Routing.');
   if(f.turnstile && !f.siteKey) issues.push('Turnstile is on but has no site key.');
   if(!issues.length){
     box.append(el('div','note','Ready. The export will include functions/api/contact.js and a SETUP.md checklist with these values filled in.'));

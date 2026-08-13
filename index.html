@@ -405,9 +405,10 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
         <div id="dropzone">
           <div class="card">
             <h1>Open a site to start</h1>
-            <p>Drop a client's <code>index.html</code> here — or all the pages of the site at once — or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
+            <p>Drop a single-file <code>index.html</code>, or a whole site folder with its <code>.css</code> and <code>images/</code>, or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
             <div class="row" style="justify-content:center">
-              <button class="btn primary" id="dzHtml">Choose HTML files</button>
+              <button class="btn primary" id="dzHtml">Choose files</button>
+              <button class="btn" id="dzDir">Choose a folder</button>
               <button class="btn" id="dzProj">Open project</button>
               <button class="btn" id="dzDemo">Load test page</button>
             </div>
@@ -463,7 +464,8 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
   </div>
 </div>
 
-<input type="file" id="fHtml" accept=".html,.htm,text/html" multiple hidden>
+<input type="file" id="fHtml" accept=".html,.htm,.css,image/*" multiple hidden>
+<input type="file" id="fDir" webkitdirectory directory multiple hidden>
 <input type="file" id="fProj" accept=".json,application/json" hidden>
 <input type="file" id="fImg" accept="image/*" hidden>
 <input type="file" id="fLogo" accept="image/*" hidden>
@@ -850,6 +852,7 @@ Model.scanImages = function(doc){
         const before = css.slice(Math.max(0, m.index-160), m.index);
         const sel = (before.match(/([^{}]+)\{[^{}]*$/)||[])[1];
         slots.push({key:'css:'+si+':'+j, kind:'css', styleEl, styleIdx:si, urlIdx:j, src:m[2],
+                    sheetPath: styleEl.getAttribute('data-sheet') || '',
                     label:'CSS background · ' + (sel ? sel.trim().split('\n').pop().slice(0,42) : 'style block '+(si+1))});
       }
       j++;
@@ -960,6 +963,72 @@ function auditSeo(doc, head){
   if(!head.canonical) out.push({level:'warn', msg:'No canonical URL set, so no sitemap or Open Graph URL can be written.'});
   if(!(head.biz||{}).name) out.push({level:'warn', msg:'No business details, so no LocalBusiness listing is written.'});
   return out;
+}
+
+/* ==========================================================================
+   3a. Sites that keep their CSS and images in separate files.
+
+   The whole editor reads <style> blocks and resolves images from a table keyed
+   by content hash. Rather than teach every part of it about external files,
+   external stylesheets are folded into the document at the start of a build —
+   each <link rel="stylesheet"> becomes a <style data-sheet="path"> holding the
+   same CSS. Colours, the WebKit check and url() scanning then work unchanged.
+
+   On a folder export the process is reversed at the very end: each block is
+   written back out to its own .css file and the <link> restored. A <style>
+   occupies the same child index its <link> did, so element paths are unaffected
+   and a project saved from a single-file site still resolves.
+   ========================================================================== */
+
+/* "css/site.css" + "../images/a.jpg" -> "images/a.jpg" */
+function resolveRelative(base, ref){
+  if(/^([a-z]+:|\/\/|\/|#|data:)/i.test(ref)) return null;   // absolute or not a file
+  const dir = String(base||'').split('/').slice(0, -1);
+  const out = [];
+  for(const part of dir.concat(String(ref).split('/'))){
+    if(!part || part === '.') continue;
+    if(part === '..') out.pop(); else out.push(part);
+  }
+  return out.join('/');
+}
+function normalizePath(x){
+  return String(x||'').replace(/^\.\//,'').split(/[?#]/)[0];
+}
+
+/* Fold every external stylesheet into the document. */
+function inlineSheets(doc, sheets, problems){
+  if(!sheets) return;
+  for(const link of [...doc.querySelectorAll('link[rel~="stylesheet" i][href]')]){
+    const href = normalizePath(link.getAttribute('href'));
+    if(/^([a-z]+:|\/\/)/i.test(href)) continue;              // a CDN, leave it alone
+    const sheet = sheets[href];
+    if(!sheet){
+      problems.push({kind:'css', ref:href, msg:'This page links to ' + href + ', which was not opened. Its colours and images cannot be edited — add the file to this project.'});
+      continue;
+    }
+    const st = doc.createElement('style');
+    st.setAttribute('data-sheet', href);
+    if(link.getAttribute('media')) st.setAttribute('media', link.getAttribute('media'));
+    st.textContent = sheet.css;
+    link.parentNode.replaceChild(st, link);
+  }
+}
+
+/* Put them back, and hand the patched CSS to the export. */
+function extractSheets(doc, files, mode){
+  for(const st of [...doc.querySelectorAll('style[data-sheet]')]){
+    const path = st.getAttribute('data-sheet');
+    if(mode === 'folder'){
+      if(!files.has(path)) files.set(path, {name:path, data:U.utf8(st.textContent || ''), mime:'text/css'});
+      const link = doc.createElement('link');
+      link.setAttribute('rel','stylesheet');
+      link.setAttribute('href', path);
+      if(st.getAttribute('media')) link.setAttribute('media', st.getAttribute('media'));
+      st.parentNode.replaceChild(link, st);
+    }else{
+      st.removeAttribute('data-sheet');       // inlined for a single file
+    }
+  }
 }
 
 /* ==========================================================================
@@ -1524,6 +1593,9 @@ function build(project, assets, mode){
   const doc = Model.parse(project.originalHtml);
   const problems = [];
   const files = new Map();
+  /* External stylesheets become <style> blocks for the duration of the build,
+     so every scanner below sees one kind of thing. */
+  inlineSheets(doc, project.sheets, problems);
 
   /* 4a. text edits ------------------------------------------------------- */
   for(const path of Object.keys(project.edits).sort()){
@@ -1570,6 +1642,16 @@ function build(project, assets, mode){
     if(ov && ov.hash) { const r = emit(ov.hash); return r ? {url:r, hash:ov.hash} : {}; }
     const h = project.srcIndex && project.srcIndex[slot.src];
     if(h){ const r = emit(h); if(r) return {url:r, hash:h}; }
+    /* A path like images/crew.jpg, from a site whose pictures are real files.
+       url() inside a stylesheet resolves against that sheet's own folder. */
+    if(project.srcFiles){
+      const base = slot.kind === 'css' ? (slot.sheetPath || '') : '';
+      const rel = resolveRelative(base, slot.src);
+      const byPath = project.srcFiles[normalizePath(slot.src)] || (rel && project.srcFiles[rel]);
+      if(byPath){ const r = emit(byPath); if(r) return {url:r, hash:byPath}; }
+      if(/^[^:#]+\.(jpe?g|png|gif|svg|webp|avif|ico|bmp)$/i.test(normalizePath(slot.src)))
+        return {missing:true};
+    }
     return {};                    // leave the original reference untouched
   };
 
@@ -1577,6 +1659,8 @@ function build(project, assets, mode){
   for(const slot of slots){
     const ov = project.images[slot.key];
     const res = resolveSlot(slot);
+    if(res.missing)
+      problems.push({kind:'image', ref:slot.src, msg:'This page uses ' + slot.src + ', which was not opened. Add the image file to the project, or the export will point at a picture that is not there.'});
     slot.effective = res.url || (res.hidden ? null : slot.src);
     slot.hidden = !!res.hidden;
     if(slot.kind === 'img'){
@@ -1670,6 +1754,9 @@ function build(project, assets, mode){
     }else problems.push({kind:'seo', ref:head.ogImage, msg:'The sharing image is missing from this project.'});
   }
   applyHead(doc, head, ogImage, problems);
+
+  /* 4f0. put external stylesheets back, or leave them inlined ------------- */
+  extractSheets(doc, files, mode);
 
   /* 4f. companion files for the folder export ---------------------------- */
   const extras = new Map();
@@ -2503,7 +2590,8 @@ function fail(msg, e){ log(msg + (e ? ' — ' + (e.message||e) : ''), 'err'); }
 function snapshot(){
   if(!S.project) return;
   S.undo.push(JSON.stringify({pages:S.project.pages, colors:S.project.colors, form:S.project.form,
-                              biz:S.project.biz, origin:S.project.origin, lang:S.project.lang}));
+                              biz:S.project.biz, origin:S.project.origin, lang:S.project.lang,
+                              sheets:S.project.sheets, srcFiles:S.project.srcFiles}));
   if(S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;
   S.dirty = true;
@@ -2514,6 +2602,7 @@ function undo(){
   const prev = JSON.parse(S.undo.pop());
   S.project.pages = prev.pages; S.project.colors = prev.colors; S.project.form = prev.form;
   S.project.biz = prev.biz; S.project.origin = prev.origin; S.project.lang = prev.lang;
+  S.project.sheets = prev.sheets; S.project.srcFiles = prev.srcFiles;
   for(const n of pageNames(S.project)) indexSource(S.project.pages[n]);
   $('#btnUndo').disabled = !S.undo.length;
   rebuild(true);
@@ -2559,6 +2648,7 @@ function pageView(project, name){
   return {originalHtml:pg.originalHtml, edits:pg.edits, images:pg.images,
           styles:pg.styles, nudges:pg.nudges, nudgeSeq:pg.nudgeSeq,
           compat:pg.compat, srcIndex:pg.srcIndex,
+          sheets:project.sheets, srcFiles:project.srcFiles,
           colors:project.colors, form:project.form, head};
 }
 function pageNames(project){
@@ -2586,6 +2676,8 @@ function newProject(html, name, fileName){
     name: name || 'Untitled site',
     createdAt: Date.now(), updatedAt: Date.now(),
     pages: Object.create(null),
+    sheets: Object.create(null),      // path -> {css} for external stylesheets
+    srcFiles: Object.create(null),    // path -> hash for images that are real files
     colors:Object.create(null), assets:Object.create(null),
     biz: blankHead().biz, origin:'', lang:'',
     form: blankForm()
@@ -2597,6 +2689,29 @@ function safePageName(n){
   let x = String(n || 'page').split(/[\\/]/).pop().trim();
   if(!/\.html?$/i.test(x)) x += '.html';
   return x.toLowerCase().replace(/[^a-z0-9._-]+/g,'-');
+}
+/* A stylesheet that came with the site. */
+function addSheet(project, path, css){
+  const p = normalizePath(String(path).replace(/^[\\/]+/,''));
+  project.sheets[p] = {path:p, css};
+  return p;
+}
+/* An image that is a real file rather than a data URI. Registered under its
+   path so the references already in the HTML and CSS resolve. */
+async function addImageFile(project, path, file){
+  const p = normalizePath(String(path).replace(/^[\\/]+/,''));
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const mime = file.type || ({jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif',
+                              svg:'image/svg+xml', webp:'image/webp', avif:'image/avif',
+                              ico:'image/x-icon', bmp:'image/bmp'})[(p.split('.').pop()||'').toLowerCase()]
+                            || 'application/octet-stream';
+  const hash = U.sha1(bytes);
+  if(!S.assets[hash]) S.assets[hash] = {mime, b64:U.bytesToB64(bytes), bytes:bytes.length,
+                                        name:p.split('/').pop(),
+                                        slug:U.slug(p.split('/').pop().replace(/\.[a-z0-9]+$/i,''), 'image'),
+                                        from:'page'};
+  project.srcFiles[p] = hash;
+  return {path:p, hash, bytes:bytes.length};
 }
 function addPage(project, fileName, html){
   let name = safePageName(fileName);
@@ -2642,22 +2757,51 @@ function indexSource(page){
   return {n, bad, slots:slots.length};
 }
 
+const IMG_EXT = /\.(jpe?g|png|gif|svg|webp|avif|ico|bmp)$/i;
+/* Split a dropped or chosen set into the three things we care about. */
+function sortIncoming(list){
+  const html = [], css = [], imgs = [], other = [];
+  for(const f of list){
+    const path = f.path || f.name;
+    if(/\.html?$/i.test(path)) html.push(f);
+    else if(/\.css$/i.test(path)) css.push(f);
+    else if(IMG_EXT.test(path)) imgs.push(f);
+    else other.push(f);
+  }
+  return {html, css, imgs, other};
+}
+/* Take everything that is not a page into the project. */
+async function absorbAssets(project, css, imgs){
+  let cssN = 0, imgN = 0, imgBytes = 0;
+  for(const f of css){ addSheet(project, f.path || f.name, f.text != null ? f.text : await f.file.text()); cssN++; }
+  for(const f of imgs){
+    try{
+      const r = await addImageFile(project, f.path || f.name, f.file);
+      imgN++; imgBytes += r.bytes;
+    }catch(e){ fail('Could not read ' + (f.path || f.name), e); }
+  }
+  return {cssN, imgN, imgBytes};
+}
+
 /* Open one or many .html files as a single site. */
-function openHtmlFiles(files, siteName){
+async function openHtmlFiles(files, siteName, extras){
   try{
-    S.project = newProject(null, siteName || (files[0] && files[0].name.replace(/\.html?$/i,'')) || 'Untitled site');
+    S.project = newProject(null, siteName || (files[0] && (files[0].name||'').replace(/\.html?$/i,'')) || 'Untitled site');
     S.assets = Object.create(null);
     S.undo.length = 0; S.redo.length = 0; S.selKey = null; S.dirty = true;
+    const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || []) : {cssN:0, imgN:0, imgBytes:0};
     let slots = 0, embedded = 0;
     for(const f of files){
-      const name = addPage(S.project, f.name, f.html);
+      const name = addPage(S.project, f.path || f.name, f.html);
       const info = indexSource(S.project.pages[name]);
       slots += info.slots; embedded += info.n;
     }
     const names = pageNames(S.project);
     S.page = names[0];
     log('Opened ' + names.length + ' page' + (names.length===1?'':'s') + ' — ' + names.join(', ') +
-        ' · ' + slots + ' image slot' + (slots===1?'':'s') + ', ' + embedded + ' already embedded', 'ok');
+        ' · ' + slots + ' image slot' + (slots===1?'':'s') + ', ' + embedded + ' embedded in the HTML' +
+        (got.cssN ? ', ' + got.cssN + ' stylesheet' + (got.cssN===1?'':'s') : '') +
+        (got.imgN ? ', ' + got.imgN + ' image file' + (got.imgN===1?'':'s') + ' (' + U.fmtBytes(got.imgBytes) + ')' : ''), 'ok');
     S.flagCompat = true;
     $('#dropzone').style.display = 'none';
     $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
@@ -2682,16 +2826,21 @@ function reportForms(){
       '. One setup covers all of them — configure it once in the Form tab.', 'ok');
 }
 
-function addPagesFrom(files){
-  if(!S.project) return openHtmlFiles(files);
+async function addPagesFrom(files, extras){
+  if(!S.project) return openHtmlFiles(files, null, extras);
   snapshot();
+  const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || []) : {cssN:0, imgN:0};
   const added = [];
   for(const f of files){
-    const name = addPage(S.project, f.name, f.html);
+    const name = addPage(S.project, f.path || f.name, f.html);
     indexSource(S.project.pages[name]);
     added.push(name);
   }
-  log('Added ' + added.join(', ') + ' to this site', 'ok');
+  const bits = [];
+  if(added.length) bits.push(added.join(', '));
+  if(got.cssN) bits.push(got.cssN + ' stylesheet' + (got.cssN===1?'':'s'));
+  if(got.imgN) bits.push(got.imgN + ' image' + (got.imgN===1?'':'s'));
+  log('Added ' + (bits.join(' · ') || 'nothing') + ' to this site', 'ok');
   rebuild(true); reportForms();
 }
 
@@ -2700,7 +2849,8 @@ function migrate(p){
   if(p.pages) return p;
   const q = {
     v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:p.updatedAt,
-    pages:Object.create(null), colors:p.colors || Object.create(null),
+    pages:Object.create(null), sheets:Object.create(null), srcFiles:Object.create(null),
+    colors:p.colors || Object.create(null),
     biz:(p.head && p.head.biz) || blankHead().biz,
     origin:(p.head && p.head.canonical) || '', lang:(p.head && p.head.lang) || '',
     form:p.form || blankForm(), assets:p.assets || {}
@@ -2723,6 +2873,8 @@ function openProjectData(raw){
     S.project.biz = Object.assign(blankHead().biz, p.biz || {});
     S.project.form = Object.assign(blankForm(), p.form || {});
     S.project.origin = p.origin || ''; S.project.lang = p.lang || '';
+    S.project.sheets = p.sheets || Object.create(null);
+    S.project.srcFiles = p.srcFiles || Object.create(null);
     /* Saved assets first, then the images each page already carries. Doing it
        the other way round wipes the ones indexSource just registered, and every
        untouched photo comes back as "image data missing". */
@@ -2799,6 +2951,8 @@ function renderStats(r){
   $('#stats').innerHTML = '';
   const add = (label, val)=>{ const d=el('div','stat'); d.append(el('b',null,val), el('span',null,label)); $('#stats').append(d); };
   add('pages', String(pageNames(S.project).length));
+  const nSheets = Object.keys(S.project.sheets || {}).length;
+  if(nSheets) add('stylesheets', String(nSheets));
   add('image slots here', String(r.slots.length));
   add('images stored', String(Object.keys(S.assets).length));
   add('uploaded', String(uploaded));
@@ -2871,10 +3025,14 @@ function renderPages(){
     };
     bar.append(b);
   }
-  const add = el('button','pagetab','+ add pages');
-  add.title = 'Add more .html files to this site';
+  const add = el('button','pagetab','+ add files');
+  add.title = 'Add more pages, stylesheets or images to this site';
   add.onclick = ()=> $('#fHtml').click();
   bar.append(add);
+  const addDir = el('button','pagetab','+ folder');
+  addDir.title = 'Add a whole folder';
+  addDir.onclick = ()=> $('#fDir').click();
+  bar.append(addDir);
   if(names.length > 1 && S.page){
     const del = el('button','pagetab','remove ' + S.page);
     del.onclick = ()=>{
@@ -3642,6 +3800,9 @@ $('#btnExportZip').onclick = ()=>{
 function projectForSave(){
   const p = S.project;
   const used = new Set();
+  /* Images that came in as real files have no other copy anywhere, so they
+     must go into the .json alongside the replacements. */
+  for(const h of Object.values(p.srcFiles || {})) used.add(h);
   for(const n of pageNames(p))
     for(const o of Object.values(p.pages[n].images)) if(o && o.hash) used.add(o.hash);
   if(p.pages[pageNames(p)[0]] && p.pages[pageNames(p)[0]].head.ogImage) used.add(p.pages[pageNames(p)[0]].head.ogImage);
@@ -3658,7 +3819,8 @@ function projectForSave(){
   }
   return {
     v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
-    pages, colors:p.colors, biz:p.biz, origin:p.origin, lang:p.lang,
+    pages, sheets:p.sheets, srcFiles:p.srcFiles,
+    colors:p.colors, biz:p.biz, origin:p.origin, lang:p.lang,
     form:p.form, assets
   };
 }
@@ -3711,14 +3873,37 @@ $('#nameField').onchange = ()=>{
 
 /* file inputs + drop */
 $('#btnOpenHtml').onclick = $('#dzHtml').onclick = ()=> $('#fHtml').click();
+$('#dzDir').onclick = ()=> $('#fDir').click();
 $('#btnOpenProj').onclick = $('#dzProj').onclick = ()=> $('#fProj').click();
-$('#fHtml').onchange = async (e)=>{
-  const list = [...e.target.files]; e.target.value='';
-  if(!list.length) return;
-  const files = [];
-  for(const f of list) files.push({name:f.name, html:await f.text()});
-  if(S.project) addPagesFrom(files); else openHtmlFiles(files);
-};
+/* One path for every way files arrive: the picker, a folder, or a drop. */
+async function intake(fileList){
+  const list = [...fileList].map(f => ({
+    file:f,
+    /* webkitRelativePath keeps the folder structure, minus the top folder the
+       person picked — so css/site.css stays css/site.css. */
+    path:(f.webkitRelativePath || f.name).split('/').slice(f.webkitRelativePath ? 1 : 0).join('/') || f.name,
+    name:f.name
+  }));
+  const proj = list.find(f => /\.json$/i.test(f.name));
+  if(proj){
+    try{ openProjectData(JSON.parse(await proj.file.text())); }
+    catch(err){ fail('That .json is not readable', err); }
+    return;
+  }
+  const {html, css, imgs, other} = sortIncoming(list);
+  for(const f of other) log('Ignored ' + f.path + ' — the editor takes .html, .css, images and .json projects');
+  if(!html.length && !S.project){
+    fail('No .html file in that selection, so there is nothing to open yet.');
+    return;
+  }
+  const pages = [];
+  for(const f of html) pages.push({path:f.path, name:f.name, html:await f.file.text()});
+  const extras = {css, imgs};
+  if(S.project) await addPagesFrom(pages, extras);
+  else await openHtmlFiles(pages, null, extras);
+}
+$('#fHtml').onchange = async (e)=>{ const l = [...e.target.files]; e.target.value=''; if(l.length) intake(l); };
+$('#fDir').onchange  = async (e)=>{ const l = [...e.target.files]; e.target.value=''; if(l.length) intake(l); };
 $('#fProj').onchange = async (e)=>{
   const f = e.target.files[0]; e.target.value='';
   if(!f) return;
@@ -3731,18 +3916,8 @@ const dz = $('#dropzone');
 addEventListener('drop', async (e)=>{
   const list = [...e.dataTransfer.files];
   if(!list.length){ if(S.project) dz.style.display='none'; return; }
-  const proj = list.find(f => /\.json$/i.test(f.name));
-  if(proj){
-    try{ openProjectData(JSON.parse(await proj.text())); }catch(err){ fail('That .json is not readable', err); }
-    return;
-  }
-  const html = list.filter(f => /\.html?$/i.test(f.name));
-  const other = list.filter(f => !/\.html?$/i.test(f.name));
-  for(const f of other) fail('Ignored ' + f.name + ' — drop .html pages or a .json project');
-  if(!html.length){ if(S.project) dz.style.display='none'; return; }
-  const files = [];
-  for(const f of html) files.push({name:f.name, html:await f.text()});
-  if(S.project) addPagesFrom(files); else openHtmlFiles(files);
+  await intake(list);
+  if(S.project) dz.style.display='none';
 });
 
 /* ==========================================================================
@@ -4175,6 +4350,94 @@ function runTests(){
         if(Object.keys(CUR().nudges).length) throw new Error('reset left the neighbour rule behind');
         return 'rule sits on the neighbour, listed and cleared from the element you selected';
       } finally { S.project = saveP; S.page = saveN; S.sel = null; }
+    });
+    T('External CSS is read for colours and written back out on a folder export', ()=>{
+      const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="css/site.css"></head>' +
+                   '<body><h1>Hi</h1></body></html>';
+      const css  = '.hero{background:rgba(47,111,78,.55)}.b{color:#2f6f4e}.c{color:#abc}';
+      const p = PROJ([{name:'index.html', html}]);
+      addSheet(p, 'css/site.css', css);
+      const view = pageView(p, 'index.html');
+      const found = build(view, S.assets, 'preview').colors.map(c=>c.hex);
+      if(!found.includes('#2f6f4e')) throw new Error('external colours not found: ' + found.join());
+      p.colors['#2f6f4e'] = '#1a4a8f';
+      const all = buildAll(p, S.assets, 'folder');
+      const out = new TextDecoder().decode(all.files.get('css/site.css').data);
+      if(!/rgba\(26, 74, 143, \.55\)/.test(out)) throw new Error('alpha lost in the external sheet');
+      if(!/color:#1a4a8f/.test(out)) throw new Error('external sheet not recoloured');
+      if(!/<link rel="stylesheet" href="css\/site.css">/.test(all.pages[0].r.html)) throw new Error('link not restored');
+      if(/<style/.test(all.pages[0].r.html)) throw new Error('the sheet was left inlined');
+      return found.length + ' colours found, sheet rewritten, link restored';
+    });
+    T('A single-file export inlines the external sheet', ()=>{
+      const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="site.css"></head><body><h1>Hi</h1></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      addSheet(p, 'site.css', '.x{color:#2f6f4e}');
+      const out = buildAll(p, S.assets, 'single').pages[0].r.html;
+      if(/link rel="stylesheet"/.test(out)) throw new Error('link survived into a single file');
+      if(!/\.x\{color:#2f6f4e\}/.test(out)) throw new Error('CSS not inlined');
+      if(/data-sheet/.test(out)) throw new Error('bookkeeping attribute left in the output');
+      return 'one file, no external reference';
+    });
+    T('Images that are real files resolve in HTML, inline style and CSS alike', ()=>{
+      const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="css/site.css"></head><body>' +
+                   '<img src="images/a.jpg" alt="A">' +
+                   '<div style="background-image:url(images/b.jpg)"></div></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      addSheet(p, 'css/site.css', '.hero{background-image:url(../images/c.jpg)}');
+      for(const [path, body] of [['images/a.jpg','AAA'],['images/b.jpg','BBB'],['images/c.jpg','CCC']]){
+        const bytes = U.utf8(body), h = U.sha1(bytes);
+        S.assets[h] = {mime:'image/jpeg', b64:U.bytesToB64(bytes), bytes:bytes.length,
+                       name:path, slug:path.split('/').pop().replace(/\.\w+$/,''), from:'page'};
+        p.srcFiles[path] = h;
+      }
+      const all = buildAll(p, S.assets, 'folder');
+      const names = [...all.files.keys()].filter(k=>/^images\//.test(k));
+      if(names.length !== 3) throw new Error('expected 3 images, got ' + names.join());
+      const page = all.pages[0].r.html;
+      const sheet = new TextDecoder().decode(all.files.get('css/site.css').data);
+      if(!/src="images\/a\.[0-9a-f]{12}\.jpg"/.test(page)) throw new Error('<img> not repointed');
+      if(!/url\('images\/b\.[0-9a-f]{12}\.jpg'\)/.test(page)) throw new Error('inline background not repointed');
+      /* ../images/c.jpg inside css/site.css must resolve to images/c.jpg */
+      if(!/url\("images\/c\.[0-9a-f]{12}\.jpg"\)/.test(sheet)) throw new Error('relative url() in the sheet not resolved: ' + sheet);
+      return '3 images, all three reference styles repointed';
+    });
+    T('A referenced file that was not opened is reported, not silently shipped', ()=>{
+      const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="missing.css"></head>' +
+                   '<body><img src="images/gone.jpg" alt="x"></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      p.srcFiles['images/other.jpg'] = 'deadbeef';       // makes it a folder-style site
+      const all = buildAll(p, S.assets, 'folder');
+      if(!all.problems.some(x=>x.kind==='css' && /missing\.css/.test(x.msg))) throw new Error('missing stylesheet not reported');
+      if(!all.problems.some(x=>x.kind==='image' && /gone\.jpg/.test(x.msg))) throw new Error('missing image not reported');
+      return 'both reported by name';
+    });
+    T('A folder site survives a save and reopen', ()=>{
+      const saveA = S.assets, saveP = S.project, saveN = S.page;
+      try{
+        const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="site.css"></head>' +
+                     '<body><img src="images/a.jpg" alt="A"></body></html>';
+        S.project = PROJ([{name:'index.html', html}]);
+        S.page = 'index.html';
+        addSheet(S.project, 'site.css', '.x{color:#2f6f4e}');
+        const bytes = U.utf8('AAA'), h = U.sha1(bytes);
+        S.assets[h] = {mime:'image/jpeg', b64:U.bytesToB64(bytes), bytes:bytes.length, name:'a', slug:'a', from:'page'};
+        S.project.srcFiles['images/a.jpg'] = h;
+        S.project.origin = 'https://example.com';
+        const before = buildAll(S.project, S.assets, 'folder');
+        const saved = JSON.parse(JSON.stringify(projectForSave()));
+        if(!saved.sheets['site.css']) throw new Error('stylesheet not saved');
+        if(!saved.assets[h]) throw new Error('an image that only exists as a file was not saved');
+        /* reopen from nothing */
+        S.assets = Object.create(null);
+        for(const [k, v] of Object.entries(saved.assets)) S.assets[k] = v;
+        for(const n of Object.keys(saved.pages)) indexSource(saved.pages[n]);
+        const after = buildAll(saved, S.assets, 'folder');
+        if(after.problems.length) throw new Error(after.problems[0].msg);
+        if(before.pages[0].r.html !== after.pages[0].r.html) throw new Error('page differs after reopening');
+        if([...before.files.keys()].join() !== [...after.files.keys()].join()) throw new Error('files differ after reopening');
+        return 'stylesheet and image files both restored';
+      } finally { S.assets = saveA; S.project = saveP; S.page = saveN; }
     });
     T('One image used on several pages is written out once', ()=>{
       const p = PROJ([{name:'index.html', html:FIXTURE},

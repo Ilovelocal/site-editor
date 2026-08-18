@@ -347,8 +347,8 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
             <input class="field" id="fmSuccess">
             <div class="lbl" style="margin-top:8px">Deploy as</div>
             <select class="field" id="fmTarget">
-              <option value="workers">Worker with static assets — recommended</option>
-              <option value="pages">Pages Function — does not work for email</option>
+              <option value="pages">Cloudflare Pages — flat folder, uses an API token</option>
+              <option value="workers">Worker with static assets — public/ and src/, no token</option>
             </select>
             <p class="hint" id="fmTargetNote"></p>
             <div class="hr"></div>
@@ -1741,7 +1741,7 @@ function contactFunction(form){
 function setupNotes(project){
   const f = project.form || {};
   const domain = (project.origin || '').replace(/^https?:\/\//,'').replace(/\/.*$/,'') || 'yourclientdomain.com';
-  const wk = (f.target || 'workers') === 'workers';
+  const wk = (f.target || 'pages') === 'workers';
   const proj = (project.name || 'site').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'my-site';
   const L = [
     '# Setup for ' + (project.name || 'this site'),
@@ -1812,12 +1812,70 @@ function setupNotes(project){
     L.push('- There is no database, so the email is the only copy of an enquiry.');
     L.push('- First sends often land in Spam or Promotions. Mark one as not spam.');
   }else{
-    L.push('> **This layout cannot send email.** Pages Functions have no `send_email`');
-    L.push('> binding, and a Pages Function cannot reach the REST API \u2014 the request');
-    L.push('> stalls and returns a bare 502. Switch the deploy target to *Worker with');
-    L.push('> static assets* in the Form panel and export again.');
+    L.push('This is a **Cloudflare Pages** site. The pages and `images/` sit at the top');
+    L.push('level and the contact form is `functions/api/contact.js`.');
     L.push('');
-    L.push('The pages themselves are fine to deploy as they are.');
+    L.push('> **Drag-and-drop upload will not work for the form.** Cloudflare\u2019s dashboard');
+    L.push('> uploader ignores the `functions/` folder \u2014 the pages go up fine and the form');
+    L.push('> quietly does not. Deploy with Wrangler or a Git repo instead.');
+    L.push('');
+    L.push('## 1. Let the domain send mail (once per client)');
+    L.push('');
+    L.push('1. Dashboard > **Compute > Email Service** > **Onboard Domain**, pick **' + domain + '**.');
+    L.push('   Cloudflare adds the SPF and DKIM records itself.');
+    L.push('2. Add **' + (f.to || 'the owner\u2019s email address') + '** as a destination address.');
+    L.push('   Cloudflare emails it a link; the owner must click it. Nothing works until they do.');
+    L.push('   A Gmail address is fine \u2014 it does not have to be on the domain.');
+    L.push('');
+    L.push('## 2. Create the API token (once ever, not once per client)');
+    L.push('');
+    L.push('My Profile > API Tokens > Create Token > Custom token, with **Send email** set to');
+    L.push('**Edit** on your account. Leave IP filtering and TTL empty. Reuse the same token');
+    L.push('for every site in this account. Copy it now \u2014 it is shown only once.');
+    L.push('');
+    L.push('## 3. Deploy');
+    L.push('');
+    L.push('```');
+    L.push('npx wrangler login');
+    L.push('npx wrangler pages deploy . --project-name=' + proj + ' --branch=production');
+    L.push('```');
+    L.push('');
+    L.push('Run it from the folder holding `index.html`, or `functions/` is skipped.');
+    L.push('');
+    L.push('## 4. Paste the secrets');
+    L.push('');
+    L.push('Settings > Variables and secrets, as **Secrets**, on **Production**:');
+    L.push('');
+    L.push('| Name | Value |');
+    L.push('| --- | --- |');
+    L.push('| `CF_ACCOUNT_ID` | your account id \u2014 in the dashboard URL, not the Zone ID |');
+    L.push('| `CF_EMAIL_TOKEN` | the token from step 2 |');
+    L.push('| `FORM_TO` | ' + (f.to || 'the verified address from step 1') + ' |');
+    L.push('| `FORM_FROM` | ' + (f.from || 'forms@' + domain) + ' |');
+    if(f.turnstile) L.push('| `TURNSTILE_SECRET` | the secret key from your Turnstile widget |');
+    L.push('');
+    L.push('Paste with no trailing space or newline, then **deploy again** \u2014 secrets never');
+    L.push('reach a build that already exists.');
+    L.push('');
+    L.push('## 5. Check it');
+    L.push('');
+    L.push('Open `/api/contact?check=1`. It reports the build and whether each secret is set');
+    L.push('and well formed \u2014 names only, never values. Then submit the form for real.');
+    L.push('');
+    L.push('| What you see | What it means |');
+    L.push('| --- | --- |');
+    L.push('| 404 on `/api/contact` | The `functions/` folder never deployed. See step 3. |');
+    L.push('| A Cloudflare 502 error page | Something threw before the function answered. Check the Logs. |');
+    L.push('| A 424 with a `hint` | The function worked; Email Service refused. The hint says why. |');
+    L.push('| `The form is not set up correctly yet` | A secret has a stray space or newline. |');
+    L.push('');
+    L.push('## Notes');
+    L.push('');
+    L.push('- `FORM_FROM` (' + (f.from || 'forms@' + domain) + ') needs no mailbox; nothing is delivered to it.');
+    L.push('- `FORM_TO` (' + (f.to || 'the owner\u2019s address') + ') must be a **verified destination**.');
+    L.push('- Replying to an enquiry reaches the customer, not ' + (f.from || 'the from address') + '.');
+    L.push('- There is no database, so the email is the only copy of an enquiry.');
+    L.push('- First sends often land in Spam or Promotions. Mark one as not spam.');
   }
   if(!f.enabled){
     L.push('');
@@ -2066,7 +2124,7 @@ function buildAll(project, assets, mode){
     if(project.form && project.form.enabled && !pages.some(p => p.r.formOn))
       problems.push({kind:'form', ref:'form', msg:'The contact form is switched on, but no page in this site has a <form>. SETUP.md includes markup you can paste in.'});
     if(project.form && project.form.enabled){
-      if((project.form.target || 'workers') === 'workers'){
+      if((project.form.target || 'pages') === 'workers'){
         extras.set('wrangler.jsonc', {name:'wrangler.jsonc', data:U.utf8(wranglerConfig(project))});
         extras.set('src/index.js', {name:'src/index.js', data:U.utf8(workerEntry(project.form))});
       }else{
@@ -2933,7 +2991,7 @@ function blankHead(){
 }
 function blankForm(){
   return {enabled:false, to:'', from:'', subject:'', success:'Thanks — we\u2019ll get back to you shortly.',
-          turnstile:false, siteKey:'', target:'workers'};
+          turnstile:false, siteKey:'', target:'pages'};
 }
 function newProject(html, name, fileName){
   const p = {
@@ -3137,7 +3195,7 @@ function openProjectData(raw){
     S.project.colors = p.colors || Object.create(null);
     S.project.biz = Object.assign(blankHead().biz, p.biz || {});
     S.project.form = Object.assign(blankForm(), p.form || {});
-    if(!S.project.form.target) S.project.form.target = 'workers';
+    if(!S.project.form.target) S.project.form.target = 'pages';
     S.project.origin = p.origin || ''; S.project.lang = p.lang || '';
     S.project.sheets = p.sheets || Object.create(null);
     S.project.srcFiles = p.srcFiles || Object.create(null);
@@ -3890,10 +3948,10 @@ function renderForm(){
   $('#fmSiteKey').style.display = f.turnstile ? 'block' : 'none';
   $('#fmSiteKey').value = f.siteKey;
   $('#fmTarget').value = f.target || 'workers';
-  $('#fmTargetNote').textContent = (f.target || 'workers') === 'workers'
-    ? 'Emails go out through the send_email binding. No API token, and nothing to paste but two addresses.'
-    : 'Pages Functions cannot use the send_email binding, and a Worker cannot reach the REST API — this combination fails with a 502. Only pick it if the form is switched off.';
-  $('#fmTargetNote').style.color = (f.target || 'workers') === 'workers' ? 'var(--ink-2)' : 'var(--bad)';
+  $('#fmTargetNote').textContent = (f.target || 'pages') === 'pages'
+    ? 'Exports index.html and images/ at the top level, plus functions/api/contact.js. Deploy with wrangler pages deploy, and paste four secrets into the project.'
+    : 'Exports the site under public/ with the Worker in src/ and a wrangler.jsonc. Email goes through the send_email binding, so there is no API token to create — but it is a different deploy command and a different layout.';
+  $('#fmTargetNote').style.color = 'var(--ink-2)';
   const box = $('#fmStatus'); box.innerHTML = '';
   if(!f.enabled) return;
   const issues = [];
@@ -4056,7 +4114,7 @@ $('#btnExportZip').onclick = ()=>{
   const extras = [...all.extras.values()].sort((a,b)=>a.name<b.name?-1:1);
   /* A Workers deploy serves the site from public/ and keeps the Worker in
      src/, so the config and entry point are never served as web pages. */
-  const wk = S.project.form && S.project.form.enabled && (S.project.form.target || 'workers') === 'workers';
+  const wk = S.project.form && S.project.form.enabled && (S.project.form.target || 'pages') === 'workers';
   const pre = wk ? 'public/' : '';
   const htmls = all.pages.map(pg => ({name:pre + pg.name, data:U.utf8(pg.r.html)}));
   const imgs2 = wk ? imgs.map(f => ({...f, name:pre + f.name})) : imgs;
@@ -4071,6 +4129,9 @@ $('#btnExportZip').onclick = ()=>{
       ', zip ' + U.fmtBytes(size) + '. Image names carry a content hash, so unchanged pictures keep their filename on the next deploy.', 'ok');
   if(!(S.project.origin||'').trim())
     fail('Exported without a site address, so this zip has no robots.txt, no sitemap.xml and no canonical tags. Set it in the SEO tab and export again.');
+  if(S.project.form && S.project.form.enabled)
+    log(wk ? 'Workers layout: the site is under public/, the Worker in src/, with wrangler.jsonc. Deploy with "npx wrangler deploy".'
+           : 'Pages layout: pages and images/ at the top level, with functions/api/contact.js. Deploy with "npx wrangler pages deploy .".', 'ok');
   if(S.project.form && S.project.form.enabled) log('Do not drag-and-drop this zip into the Cloudflare dashboard \u2014 that uploader ignores the functions/ folder and the form will not work. Deploy with "npx wrangler pages deploy ." or connect a Git repo. SETUP.md has both.', 'warn');
   if(S.project.form && S.project.form.enabled) log('The contact form is wired to /api/contact. Read SETUP.md in the zip before you deploy — it needs four secrets on the Pages project.', 'warn');
 };
@@ -5064,35 +5125,42 @@ function runTests(){
       if(!/<link rel="canonical" href="https:\/\/alvarezroofing.com\/services.html">/.test(svc)) throw new Error('per-page canonical missing');
       return '3 pages, one site address, noindex page excluded';
     });
-    T('Forms on several pages share one function and one set of secrets', ()=>{
+    T('Forms on several pages share one endpoint, in either deploy layout', ()=>{
       const withForm = FIXTURE.replace('<footer>',
         '<form><input type="text" name="name"><input type="email" name="email">' +
         '<textarea name="message"></textarea><button type="submit">Send</button></form><footer>');
-      const p = PROJ([{name:'index.html', html:FIXTURE},
-                      {name:'contact.html', html:withForm},
-                      {name:'quote.html', html:withForm}]);
-      p.form.enabled = true; p.form.to = 'owner@example.com'; p.form.from = 'forms@example.com';
-      const all = buildAll(p, S.assets, 'folder');
-      const page = (n)=> all.pages.find(x=>x.name===n).r.html;
-      for(const n of ['contact.html','quote.html']){
-        if(!/<form data-contact-form="" action="\/api\/contact" method="post"/.test(page(n))) throw new Error(n + ' not repointed');
-        if(!/name="company_website"/.test(page(n))) throw new Error(n + ' has no honeypot');
+      const mk = (target)=>{
+        const p = PROJ([{name:'index.html', html:FIXTURE},
+                        {name:'contact.html', html:withForm},
+                        {name:'quote.html', html:withForm}]);
+        Object.assign(p.form, {enabled:true, to:'owner@example.com', from:'forms@example.com', target});
+        return buildAll(p, S.assets, 'folder');
+      };
+      for(const target of ['pages','workers']){
+        const all = mk(target);
+        const page = (n)=> all.pages.find(x=>x.name===n).r.html;
+        for(const n of ['contact.html','quote.html']){
+          if(!/<form data-contact-form="" action="\/api\/contact" method="post"/.test(page(n))) throw new Error(target + ': ' + n + ' not repointed');
+          if(!/name="company_website"/.test(page(n))) throw new Error(target + ': ' + n + ' has no honeypot');
+        }
+        if(/data-contact-form/.test(page('index.html'))) throw new Error(target + ': a page with no form was altered');
+        const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
+        if(!/owner@example.com/.test(md)) throw new Error(target + ': checklist not filled in');
+        if(target === 'pages'){
+          const fns = [...all.extras.keys()].filter(k=>/contact\.js$/.test(k));
+          if(fns.length !== 1) throw new Error('expected one Pages Function, got ' + fns.length);
+          if(all.extras.has('wrangler.jsonc')) throw new Error('a Workers config leaked into a Pages export');
+          const fn = new TextDecoder().decode(all.extras.get('functions/api/contact.js').data);
+          if(!/payload\.reply_to/.test(fn)) throw new Error('REST payload uses the wrong reply-to key');
+        }else{
+          const entries = [...all.extras.keys()].filter(k=>/^src\/index\.js$/.test(k));
+          if(entries.length !== 1) throw new Error('expected one Worker, got ' + entries.length);
+          if(all.extras.has('functions/api/contact.js')) throw new Error('a Pages Function leaked into a Workers export');
+          const cfg = JSON.parse(new TextDecoder().decode(all.extras.get('wrangler.jsonc').data));
+          if(cfg.send_email[0].name !== 'EMAIL') throw new Error('no send_email binding');
+        }
       }
-      if(/data-contact-form/.test(page('index.html'))) throw new Error('a page with no form was altered');
-      /* One Worker serves every page, so there is exactly one entry point and
-         one config no matter how many pages carry a form. */
-      const entries = [...all.extras.keys()].filter(k=>/^src\/index\.js$/.test(k));
-      if(entries.length !== 1) throw new Error('expected one shared Worker, got ' + entries.length);
-      const fn = new TextDecoder().decode(all.extras.get('src/index.js').data);
-      if(!/env\.EMAIL\.send/.test(fn)) throw new Error('does not use the send_email binding');
-      if(/api\.cloudflare\.com\/client\/v4/.test(fn)) throw new Error('still calls the REST API, which stalls inside a Worker');
-      if(!/replyTo/.test(fn)) throw new Error('no reply-to');
-      const cfg = JSON.parse(new TextDecoder().decode(all.extras.get('wrangler.jsonc').data));
-      if(!Array.isArray(cfg.send_email) || cfg.send_email[0].name !== 'EMAIL') throw new Error('no send_email binding in wrangler.jsonc');
-      if(cfg.assets.directory !== './public') throw new Error('assets folder not set');
-      const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
-      if(!/owner@example.com/.test(md)) throw new Error('checklist not filled in');
-      return '2 forms, 1 Worker, 1 binding, 1 checklist';
+      return '2 forms, 1 endpoint, both layouts clean';
     });
     T('A form field with no name is given one and reported', ()=>{
       const p = P();
@@ -5127,15 +5195,17 @@ function runTests(){
       return 'wrapped handler, trimmed secrets, JSON on every path';
     });
     T('Turning Turnstile on adds the widget and the secret to the checklist', ()=>{
-      const p = PROJ([{name:'index.html', html:FIXTURE.replace('<footer>', '<form><input name="name"></form><footer>')}]);
-      p.form.enabled = true; p.form.turnstile = true; p.form.siteKey = '0xTEST';
-      const all = buildAll(p, S.assets, 'folder');
-      const html = all.pages[0].r.html;
-      if(!/class="cf-turnstile" data-sitekey="0xTEST"/.test(html)) throw new Error('widget missing');
-      if(!/challenges\.cloudflare\.com\/turnstile/.test(html)) throw new Error('script missing');
-      const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
-      if(!/TURNSTILE_SECRET/.test(md)) throw new Error('checklist does not mention the secret');
-      return 'widget, script and checklist entry';
+      for(const target of ['pages','workers']){
+        const p = PROJ([{name:'index.html', html:FIXTURE.replace('<footer>', '<form><input name="name"></form><footer>')}]);
+        Object.assign(p.form, {enabled:true, turnstile:true, siteKey:'0xTEST', target});
+        const all = buildAll(p, S.assets, 'folder');
+        const html = all.pages[0].r.html;
+        if(!/class="cf-turnstile" data-sitekey="0xTEST"/.test(html)) throw new Error(target + ': widget missing');
+        if(!/challenges\.cloudflare\.com\/turnstile/.test(html)) throw new Error(target + ': script missing');
+        const md = new TextDecoder().decode(all.extras.get('SETUP.md').data);
+        if(!/TURNSTILE_SECRET/.test(md)) throw new Error(target + ': checklist does not mention the secret');
+      }
+      return 'widget, script and checklist entry, both layouts';
     });
     T('Switching the form off leaves every page byte-identical', ()=>{
       const proj = PROJ([{name:'index.html', html:FIXTURE.replace('<footer>', '<form><input name="name"></form><footer>')}]);

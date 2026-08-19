@@ -1273,17 +1273,30 @@ function applyNudges(doc, project, problems){
    ========================================================================== */
 const FORM_ENHANCE = [
   "(function(){var f=document.querySelector('form[data-contact-form]');if(!f)return;",
-  "var s=document.createElement('p');s.setAttribute('data-form-status','');s.style.cssText='margin:.75em 0';",
-  "f.appendChild(s);f.addEventListener('submit',function(e){e.preventDefault();",
-  "var b=f.querySelector('[type=submit]');if(b){b.disabled=true;}s.textContent='Sending\u2026';",
+  "var s=f.querySelector('[data-form-status]');",
+  "if(!s){s=document.createElement('p');s.setAttribute('data-form-status','');",
+  "s.style.cssText='margin:.75em 0';f.appendChild(s);}",
+  // Listen on document during the capture phase, so this runs before any
+  // handler the template attached to the form itself, then stop the event
+  // reaching them. Templates commonly submit by setting window.location to a
+  // mailto: link, which would open a mail app on top of the real send.
+  "document.addEventListener('submit',function(e){if(e.target!==f)return;",
+  "e.preventDefault();e.stopPropagation();",
+  "if(e.stopImmediatePropagation)e.stopImmediatePropagation();",
+  "var b=f.querySelector('[type=submit]');if(b){b.disabled=true;}s.textContent='Sending\\u2026';",
   "fetch(f.action,{method:'POST',body:new FormData(f)}).then(function(r){return r.json();}).then(function(d){",
   "if(d&&d.ok){f.reset();s.textContent=f.getAttribute('data-success')||'Thank you.';}",
   "else{s.textContent=(d&&d.error)||'That did not send. Please call us instead.';}",
   "}).catch(function(){s.textContent='That did not send. Please call us instead.';})",
-  ".then(function(){if(b){b.disabled=false;}});});})();"
+  ".then(function(){if(b){b.disabled=false;}});},true);})();"
 ].join('');
 
 function applyForm(doc, form, problems){
+  /* Exports are routinely reopened and exported again, so everything this
+     function adds has to be removed first. Otherwise each round trip stacks
+     another status line and another copy of the script, and the visitor sees
+     the confirmation twice. */
+  for(const el of doc.querySelectorAll('script[data-form-script],[data-form-status]')) el.remove();
   if(!form || !form.enabled) return false;
   /* Most pages of a site have no form, and that is not a fault. Whether the
      site as a whole has one is checked once, in buildAll. */
@@ -3106,6 +3119,80 @@ async function absorbAssets(project, css, imgs){
   return {cssN, imgN, imgBytes};
 }
 
+/* Read settings back out of a page this editor exported earlier.
+
+   Opening the published .html instead of the .json is a normal thing to do —
+   it is the file that is definitely current. The tags themselves survive
+   either way because they live in the markup, but the panels would start
+   empty, and an empty site address means no sitemap and no robots.txt on the
+   way out. Worse, a form left switched off has its script stripped while
+   action="/api/contact" stays, so the visitor would be dropped on a page of
+   raw JSON. So: recover what the markup already tells us. */
+function adoptFromMarkup(project){
+  const found = {pages:0, form:false, seo:0, biz:false, origin:''};
+  for(const name of pageNames(project)){
+    const pg = project.pages[name];
+    const doc = Model.parse(pg.originalHtml);
+
+    const title = (doc.querySelector('title') || {}).textContent || '';
+    if(title.trim() && !pg.head.title){ pg.head.title = title.trim(); found.seo++; }
+    const desc = doc.querySelector('meta[name="description"]');
+    if(desc && !pg.head.description){ pg.head.description = desc.getAttribute('content') || ''; found.seo++; }
+    const robots = doc.querySelector('meta[name="robots"]');
+    if(robots && !pg.head.robots) pg.head.robots = robots.getAttribute('content') || '';
+    const lang = doc.documentElement.getAttribute('lang');
+    if(lang && !project.lang) project.lang = lang;
+
+    /* The canonical is the site address plus this page's filename; strip the
+       filename back off so one origin covers every page. */
+    const canon = doc.querySelector('link[rel="canonical"]');
+    if(canon && !project.origin){
+      let href = (canon.getAttribute('href') || '').trim();
+      if(href){
+        href = href.replace(/\/[^\/]*\.html?$/i, '/').replace(/\/+$/,'');
+        if(/^https?:\/\/[^\/]+/i.test(href)){ project.origin = href; found.origin = href; }
+      }
+    }
+
+    const og = doc.querySelector('meta[property="og:image"]');
+    if(og && !pg.head.ogImage){
+      const src = og.getAttribute('content') || '';
+      const h = (pg.srcIndex && pg.srcIndex[src]) || (project.srcFiles && project.srcFiles[normalizePath(src)]);
+      if(h) pg.head.ogImage = h;
+    }
+
+    /* The business listing this editor wrote, read back into the panel. */
+    const ld = doc.querySelector('script[data-seo-block]');
+    if(ld && !project.biz.name){
+      try{
+        const o = JSON.parse(ld.textContent || '{}');
+        const a = o.address || {};
+        const set = (k, v)=>{ if(v && !project.biz[k]) project.biz[k] = String(v); };
+        set('name', o.name); set('phone', o.telephone); set('email', o.email);
+        set('priceRange', o.priceRange);
+        set('street', a.streetAddress); set('city', a.addressLocality);
+        set('region', a.addressRegion); set('postal', a.postalCode); set('country', a.addressCountry);
+        if(Array.isArray(o.openingHours)) set('hours', o.openingHours.join('\n'));
+        if(Array.isArray(o.areaServed)) set('areaServed', o.areaServed.join(', '));
+        if(Array.isArray(o.sameAs)) set('sameAs', o.sameAs.join('\n'));
+        found.biz = !!project.biz.name;
+      }catch(e){}
+    }
+
+    const f = doc.querySelector('form[data-contact-form]');
+    if(f && !project.form.enabled){
+      project.form.enabled = true;
+      const ok = f.getAttribute('data-success');
+      if(ok) project.form.success = ok;
+      const ts = doc.querySelector('.cf-turnstile[data-sitekey]');
+      if(ts){ project.form.turnstile = true; project.form.siteKey = ts.getAttribute('data-sitekey') || ''; }
+      found.form = true;
+    }
+    found.pages++;
+  }
+  return found;
+}
+
 /* Open one or many .html files as a single site. */
 async function openHtmlFiles(files, siteName, extras){
   try{
@@ -3119,12 +3206,21 @@ async function openHtmlFiles(files, siteName, extras){
       const info = indexSource(S.project.pages[name]);
       slots += info.slots; embedded += info.n;
     }
+    const adopted = adoptFromMarkup(S.project);
     const names = pageNames(S.project);
     S.page = names[0];
     log('Opened ' + names.length + ' page' + (names.length===1?'':'s') + ' — ' + names.join(', ') +
         ' · ' + slots + ' image slot' + (slots===1?'':'s') + ', ' + embedded + ' embedded in the HTML' +
         (got.cssN ? ', ' + got.cssN + ' stylesheet' + (got.cssN===1?'':'s') : '') +
         (got.imgN ? ', ' + got.imgN + ' image file' + (got.imgN===1?'':'s') + ' (' + U.fmtBytes(got.imgBytes) + ')' : ''), 'ok');
+    if(adopted.form || adopted.origin || adopted.biz){
+      const bits = [];
+      if(adopted.origin) bits.push('site address ' + adopted.origin);
+      if(adopted.biz) bits.push('business details');
+      if(adopted.form) bits.push('the contact form');
+      log('These pages were exported by this editor before, so ' + bits.join(', ') +
+          ' were read back out of the markup. Check the Form panel: the recipient and sender addresses are not stored in the page, so they still need filling in.', 'warn');
+    }
     S.flagCompat = true;
     $('#dropzone').style.display = 'none';
     $$('#btnSave,#btnExportSingle,#btnExportZip,#nameField').forEach(b=>b.disabled=false);
@@ -5172,6 +5268,54 @@ function runTests(){
       if(!/name="your-name"/.test(r.html)) throw new Error('field was not named');
       if(!r.problems.some(x=>x.kind==='form')) throw new Error('not reported');
       return 'named "your-name" and flagged';
+    });
+    T('Reopening an exported page recovers its own settings', ()=>{
+      const page = '<!DOCTYPE html><html><head><title>Home</title></head><body>' +
+                   '<form><input name="name"><button type="submit">Send</button></form></body></html>';
+      const p1 = PROJ([{name:'index.html', html:page}, {name:'contact.html', html:page}]);
+      p1.origin = 'https://example.com';
+      Object.assign(p1.biz, {name:'Acme', phone:'555', city:'Springfield'});
+      p1.pages['index.html'].head.title = 'Real title';
+      p1.pages['index.html'].head.description = 'Real description';
+      Object.assign(p1.form, {enabled:true, to:'o@x.com', from:'f@x.com', target:'pages'});
+      const first = buildAll(p1, S.assets, 'folder');
+
+      /* the published files, opened again instead of the .json */
+      const p2 = PROJ(first.pages.map(x => ({name:x.name, html:x.r.html})));
+      const got = adoptFromMarkup(p2);
+      if(p2.origin !== 'https://example.com') throw new Error('site address not recovered: ' + p2.origin);
+      if(p2.biz.name !== 'Acme' || p2.biz.city !== 'Springfield') throw new Error('business details not recovered');
+      if(!p2.form.enabled) throw new Error('the contact form was not recognised');
+      if(p2.pages['index.html'].head.title !== 'Real title') throw new Error('title not recovered');
+      if(p2.pages['index.html'].head.description !== 'Real description') throw new Error('description not recovered');
+      const second = buildAll(p2, S.assets, 'folder');
+      if(!second.extras.has('sitemap.xml')) throw new Error('sitemap would have been dropped');
+      if(!second.extras.has('functions/api/contact.js')) throw new Error('the function would have been dropped');
+      return 'address, business details, form and per-page tags all came back';
+    });
+    T('Exporting twice never stacks a second script, honeypot or title', ()=>{
+      const page = '<!DOCTYPE html><html><head><title>Home</title></head><body>' +
+                   '<form><input name="name"><button type="submit">Send</button></form></body></html>';
+      let html = page;
+      let last = null;
+      /* three round trips: export, reopen the export, export again */
+      for(let i = 0; i < 3; i++){
+        const p = PROJ([{name:'index.html', html}]);
+        adoptFromMarkup(p);
+        p.origin = 'https://example.com';
+        if(!p.pages['index.html'].head.description) p.pages['index.html'].head.description = 'A description';
+        Object.assign(p.form, {enabled:true, to:'o@x.com', from:'f@x.com', target:'pages'});
+        last = buildAll(p, S.assets, 'folder');
+        html = last.pages[0].r.html;
+      }
+      const count = (re)=> (html.match(re)||[]).length;
+      if(count(/data-form-script/g) !== 1) throw new Error(count(/data-form-script/g) + ' form scripts after 3 round trips');
+      if(count(/name="company_website"/g) !== 1) throw new Error(count(/name="company_website"/g) + ' honeypots');
+      if(count(/<title>/g) !== 1) throw new Error(count(/<title>/g) + ' title tags');
+      if(count(/name="description"/g) !== 1) throw new Error(count(/name="description"/g) + ' description tags');
+      if(count(/rel="canonical"/g) !== 1) throw new Error(count(/rel="canonical"/g) + ' canonical tags');
+      if(count(/data-seo-block/g) > 1) throw new Error('stacked JSON-LD blocks');
+      return 'stable after 3 export/reopen cycles';
     });
     T('The REST payload uses the field names the REST API documents', ()=>{
       const fn = contactFunction({subject:'Website enquiry', turnstile:false});

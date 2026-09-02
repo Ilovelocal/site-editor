@@ -401,6 +401,9 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
           <button class="mini" id="findPrev" title="Previous match">↑</button>
           <button class="mini" id="findNext" title="Next match">↓</button>
         </div>
+        <label class="chip" id="revealChip" style="cursor:pointer" title="Sections a scroll animation hides until you reach them cannot be clicked. This shows them while you edit; it never affects the exported site.">
+          <input type="checkbox" id="revealToggle" checked style="margin:0"> <span id="revealTxt">show hidden sections</span>
+        </label>
         <span class="spacer"></span>
         <span class="chip" id="editChip"><i class="dot"></i><span>click to edit, ⇕ to move</span></span>
       </div>
@@ -411,7 +414,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
         <div id="dropzone">
           <div class="card">
             <h1>Open a site to start</h1>
-            <p>Drop a single-file <code>index.html</code>, or a whole site folder with its <code>.css</code> and <code>images/</code>, or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
+            <p>Drop a single-file <code>index.html</code>, or a whole site folder with its <code>.css</code>, <code>.js</code> and <code>images/</code>, or reopen a saved <code>.json</code> project. Everything stays on this machine.</p>
             <div class="row" style="justify-content:center">
               <button class="btn primary" id="dzHtml">Choose files</button>
               <button class="btn" id="dzDir">Choose a folder</button>
@@ -470,7 +473,7 @@ td.p{color:var(--good)} td.f{color:var(--bad)}
   </div>
 </div>
 
-<input type="file" id="fHtml" accept=".html,.htm,.css,image/*" multiple hidden>
+<input type="file" id="fHtml" accept=".html,.htm,.css,.js,image/*" multiple hidden>
 <input type="file" id="fDir" webkitdirectory directory multiple hidden>
 <input type="file" id="fProj" accept=".json,application/json" hidden>
 <input type="file" id="fImg" accept="image/*" hidden>
@@ -1017,6 +1020,42 @@ function inlineSheets(doc, sheets, problems){
     if(link.getAttribute('media')) st.setAttribute('media', link.getAttribute('media'));
     st.textContent = sheet.css;
     link.parentNode.replaceChild(st, link);
+  }
+}
+
+/* The page's own JavaScript, folded in the same way. A site that reveals
+   sections on scroll does nothing without it: those sections sit blank and
+   cannot be clicked, because the content is there but invisible. */
+function inlineScripts(doc, scripts, problems){
+  if(!scripts) return;
+  for(const tag of [...doc.querySelectorAll('script[src]')]){
+    if(isInjected(tag)) continue;
+    const src = normalizePath(tag.getAttribute('src'));
+    if(/^([a-z]+:|\/\/)/i.test(src)) continue;            // a CDN, leave it alone
+    const js = scripts[src];
+    if(!js){
+      problems.push({kind:'js', ref:src, msg:'This page loads ' + src + ', which was not opened. Whatever it does \u2014 scroll animations, menus \u2014 will not run here, and the file will not be in the export.'});
+      continue;
+    }
+    const el = doc.createElement('script');
+    el.setAttribute('data-script', src);
+    for(const a of ['type','defer','async','nomodule']) if(tag.hasAttribute(a)) el.setAttribute(a, tag.getAttribute(a));
+    el.textContent = js.js;
+    tag.parentNode.replaceChild(el, tag);
+  }
+}
+function extractScripts(doc, files, mode){
+  for(const el of [...doc.querySelectorAll('script[data-script]')]){
+    const path = el.getAttribute('data-script');
+    if(mode === 'folder'){
+      if(!files.has(path)) files.set(path, {name:path, data:U.utf8(el.textContent || ''), mime:'text/javascript'});
+      const tag = doc.createElement('script');
+      tag.setAttribute('src', path);
+      for(const a of ['type','defer','async','nomodule']) if(el.hasAttribute(a)) tag.setAttribute(a, el.getAttribute(a));
+      el.parentNode.replaceChild(tag, el);
+    }else{
+      el.removeAttribute('data-script');
+    }
   }
 }
 
@@ -1927,6 +1966,7 @@ function build(project, assets, mode){
   /* External stylesheets become <style> blocks for the duration of the build,
      so every scanner below sees one kind of thing. */
   inlineSheets(doc, project.sheets, problems);
+  inlineScripts(doc, project.scripts, problems);
 
   /* 4a. text edits ------------------------------------------------------- */
   for(const path of Object.keys(project.edits).sort()){
@@ -2088,6 +2128,7 @@ function build(project, assets, mode){
 
   /* 4f0. put external stylesheets back, or leave them inlined ------------- */
   extractSheets(doc, files, mode);
+  extractScripts(doc, files, mode);
 
   /* 4f. companion files for the folder export ---------------------------- */
   const extras = new Map();
@@ -2169,6 +2210,11 @@ const AGENT_CSS = `
 [data-vse-ui] b{position:absolute!important;top:-17px!important;left:-1px!important;background:#DE521C!important;
   color:#fff!important;font:10px/1.6 ui-monospace,Menlo,monospace!important;padding:0 5px!important;
   border-radius:2px 2px 0 0!important;white-space:nowrap!important;font-weight:400!important}
+/* Sections a scroll animation has left invisible. Forced visible only in the
+   preview and only when the page's own script has not already revealed them:
+   you cannot click what you cannot see, and the export never carries this. */
+[data-vse-hidden]{opacity:1!important;visibility:visible!important;transform:none!important;
+  filter:none!important;clip-path:none!important;animation:none!important;transition:none!important}
 [data-vse-selbox]{position:absolute!important;pointer-events:none!important;z-index:2147483645!important;
   border:1px dashed #DE521C!important;box-sizing:border-box!important;background:transparent!important}
 [data-vse-selbox] b{position:absolute!important;bottom:-17px!important;right:-1px!important;background:#15222C!important;
@@ -2707,6 +2753,37 @@ function PREVIEW_AGENT(){
     return out;
   }
 
+  /* ---- sections left invisible by a scroll animation ----
+     Detected by what the browser actually computes, not by class names, so it
+     works whatever the page calls them. Only elements that are still laid out
+     are touched: something set to display:none or visibility:hidden is far
+     more likely to be a closed menu or a dialog, and forcing those open would
+     fill the preview with things that are meant to be out of the way. */
+  let revealed = 0;
+  function showHiddenSections(){
+    if(CFG.noReveal) return;
+    let n = 0;
+    for(const el of document.body.querySelectorAll('*')){
+      if(inj(el) || el.hasAttribute('data-vse-hidden')) continue;
+      if(/^(SCRIPT|STYLE|LINK|META|BR|HR)$/.test(el.tagName)) continue;
+      let cs; try{ cs = getComputedStyle(el); }catch(e){ continue; }
+      if(cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const invisible = parseFloat(cs.opacity) <= 0.05;
+      if(!invisible) continue;
+      if(!(el.textContent || '').trim() && !el.querySelector('img,svg,picture,video')) continue;
+      el.setAttribute('data-vse-hidden','');
+      n++;
+    }
+    if(n){ revealed += n; send({t:'revealed', n:revealed}); }
+  }
+  /* The page's own script may reveal things as it goes, so look again a few
+     times rather than once at load. */
+  function watchHidden(){
+    showHiddenSections();
+    let tries = 0;
+    const t = setInterval(()=>{ showHiddenSections(); if(++tries > 6) clearInterval(t); }, 350);
+  }
+
   /* ---- broken images get a visible target so they can still be replaced ---- */
   function markBroken(){
     for(const im of document.images){
@@ -2714,7 +2791,7 @@ function PREVIEW_AGENT(){
       else im.removeAttribute('data-vse-broken');
     }
   }
-  addEventListener('load', ()=>{ markBroken(); report(); });
+  addEventListener('load', ()=>{ markBroken(); report(); showHiddenSections(); });
   addEventListener('error', (e)=>{ if(e.target && e.target.tagName==='IMG') e.target.setAttribute('data-vse-broken',''); }, true);
 
   /* ---- find ---- */
@@ -2817,6 +2894,7 @@ function PREVIEW_AGENT(){
 
   report();
   setTimeout(report, 400);
+  watchHidden();
 }
 
 function previewHtml(html, cfg){
@@ -2927,7 +3005,8 @@ function snapshot(){
   if(!S.project) return;
   S.undo.push(JSON.stringify({pages:S.project.pages, colors:S.project.colors, form:S.project.form,
                               biz:S.project.biz, origin:S.project.origin, lang:S.project.lang,
-                              sheets:S.project.sheets, srcFiles:S.project.srcFiles}));
+                              sheets:S.project.sheets, scripts:S.project.scripts,
+                              srcFiles:S.project.srcFiles}));
   if(S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;
   S.dirty = true;
@@ -2938,7 +3017,7 @@ function undo(){
   const prev = JSON.parse(S.undo.pop());
   S.project.pages = prev.pages; S.project.colors = prev.colors; S.project.form = prev.form;
   S.project.biz = prev.biz; S.project.origin = prev.origin; S.project.lang = prev.lang;
-  S.project.sheets = prev.sheets; S.project.srcFiles = prev.srcFiles;
+  S.project.sheets = prev.sheets; S.project.scripts = prev.scripts; S.project.srcFiles = prev.srcFiles;
   for(const n of pageNames(S.project)) indexSource(S.project.pages[n]);
   $('#btnUndo').disabled = !S.undo.length;
   rebuild(true);
@@ -2984,7 +3063,7 @@ function pageView(project, name){
   return {originalHtml:pg.originalHtml, edits:pg.edits, images:pg.images,
           styles:pg.styles, nudges:pg.nudges, nudgeSeq:pg.nudgeSeq,
           compat:pg.compat, srcIndex:pg.srcIndex,
-          sheets:project.sheets, srcFiles:project.srcFiles,
+          sheets:project.sheets, scripts:project.scripts, srcFiles:project.srcFiles,
           colors:project.colors, form:project.form, head};
 }
 function pageNames(project){
@@ -3013,6 +3092,7 @@ function newProject(html, name, fileName){
     createdAt: Date.now(), updatedAt: Date.now(),
     pages: Object.create(null),
     sheets: Object.create(null),      // path -> {css} for external stylesheets
+    scripts: Object.create(null),     // path -> {js} for the page's own scripts
     srcFiles: Object.create(null),    // path -> hash for images that are real files
     colors:Object.create(null), assets:Object.create(null),
     biz: blankHead().biz, origin:'', lang:'',
@@ -3096,27 +3176,34 @@ function indexSource(page){
 const IMG_EXT = /\.(jpe?g|png|gif|svg|webp|avif|ico|bmp)$/i;
 /* Split a dropped or chosen set into the three things we care about. */
 function sortIncoming(list){
-  const html = [], css = [], imgs = [], other = [];
+  const html = [], css = [], js = [], imgs = [], other = [];
   for(const f of list){
     const path = f.path || f.name;
     if(/\.html?$/i.test(path)) html.push(f);
     else if(/\.css$/i.test(path)) css.push(f);
+    else if(/\.m?js$/i.test(path)) js.push(f);
     else if(IMG_EXT.test(path)) imgs.push(f);
     else other.push(f);
   }
-  return {html, css, imgs, other};
+  return {html, css, js, imgs, other};
+}
+function addScript(project, path, js){
+  const p = normalizePath(String(path).replace(/^[\\/]+/,''));
+  project.scripts[p] = {path:p, js};
+  return p;
 }
 /* Take everything that is not a page into the project. */
-async function absorbAssets(project, css, imgs){
-  let cssN = 0, imgN = 0, imgBytes = 0;
+async function absorbAssets(project, css, imgs, js){
+  let cssN = 0, imgN = 0, imgBytes = 0, jsN = 0;
   for(const f of css){ addSheet(project, f.path || f.name, f.text != null ? f.text : await f.file.text()); cssN++; }
+  for(const f of (js || [])){ addScript(project, f.path || f.name, f.text != null ? f.text : await f.file.text()); jsN++; }
   for(const f of imgs){
     try{
       const r = await addImageFile(project, f.path || f.name, f.file);
       imgN++; imgBytes += r.bytes;
     }catch(e){ fail('Could not read ' + (f.path || f.name), e); }
   }
-  return {cssN, imgN, imgBytes};
+  return {cssN, imgN, imgBytes, jsN};
 }
 
 /* Read settings back out of a page this editor exported earlier.
@@ -3199,7 +3286,7 @@ async function openHtmlFiles(files, siteName, extras){
     S.project = newProject(null, siteName || (files[0] && (files[0].name||'').replace(/\.html?$/i,'')) || 'Untitled site');
     S.assets = Object.create(null);
     S.undo.length = 0; S.redo.length = 0; S.selKey = null; S.dirty = true;
-    const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || []) : {cssN:0, imgN:0, imgBytes:0};
+    const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || [], extras.js || []) : {cssN:0, imgN:0, imgBytes:0, jsN:0};
     let slots = 0, embedded = 0;
     for(const f of files){
       const name = addPage(S.project, f.path || f.name, f.html);
@@ -3212,6 +3299,7 @@ async function openHtmlFiles(files, siteName, extras){
     log('Opened ' + names.length + ' page' + (names.length===1?'':'s') + ' — ' + names.join(', ') +
         ' · ' + slots + ' image slot' + (slots===1?'':'s') + ', ' + embedded + ' embedded in the HTML' +
         (got.cssN ? ', ' + got.cssN + ' stylesheet' + (got.cssN===1?'':'s') : '') +
+        (got.jsN ? ', ' + got.jsN + ' script' + (got.jsN===1?'':'s') : '') +
         (got.imgN ? ', ' + got.imgN + ' image file' + (got.imgN===1?'':'s') + ' (' + U.fmtBytes(got.imgBytes) + ')' : ''), 'ok');
     if(adopted.form || adopted.origin || adopted.biz){
       const bits = [];
@@ -3248,7 +3336,7 @@ function reportForms(){
 async function addPagesFrom(files, extras){
   if(!S.project) return openHtmlFiles(files, null, extras);
   snapshot();
-  const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || []) : {cssN:0, imgN:0};
+  const got = extras ? await absorbAssets(S.project, extras.css || [], extras.imgs || [], extras.js || []) : {cssN:0, imgN:0, jsN:0};
   const added = [];
   for(const f of files){
     const name = addPage(S.project, f.path || f.name, f.html);
@@ -3258,6 +3346,7 @@ async function addPagesFrom(files, extras){
   const bits = [];
   if(added.length) bits.push(added.join(', '));
   if(got.cssN) bits.push(got.cssN + ' stylesheet' + (got.cssN===1?'':'s'));
+  if(got.jsN) bits.push(got.jsN + ' script' + (got.jsN===1?'':'s'));
   if(got.imgN) bits.push(got.imgN + ' image' + (got.imgN===1?'':'s'));
   log('Added ' + (bits.join(' · ') || 'nothing') + ' to this site', 'ok');
   rebuild(true); reportForms();
@@ -3268,7 +3357,7 @@ function migrate(p){
   if(p.pages) return p;
   const q = {
     v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:p.updatedAt,
-    pages:Object.create(null), sheets:Object.create(null), srcFiles:Object.create(null),
+    pages:Object.create(null), sheets:Object.create(null), scripts:Object.create(null), srcFiles:Object.create(null),
     colors:p.colors || Object.create(null),
     biz:(p.head && p.head.biz) || blankHead().biz,
     origin:(p.head && p.head.canonical) || '', lang:(p.head && p.head.lang) || '',
@@ -3294,6 +3383,7 @@ function openProjectData(raw){
     if(!S.project.form.target) S.project.form.target = 'pages';
     S.project.origin = p.origin || ''; S.project.lang = p.lang || '';
     S.project.sheets = p.sheets || Object.create(null);
+    S.project.scripts = p.scripts || Object.create(null);
     S.project.srcFiles = p.srcFiles || Object.create(null);
     /* Saved assets first, then the images each page already carries. Doing it
        the other way round wipes the ones indexSource just registered, and every
@@ -3359,7 +3449,7 @@ function rebuild(reloadPreview){
       try{ pv.contentWindow.postMessage({t:'scrollTo', y:S.scrollY}, '*'); }catch(e){}
       if($('#findInput').value) sendPv({t:'find', q:$('#findInput').value});
     };
-    pv.srcdoc = previewHtml(r.html, {check: S.pendingCheck || []});
+    pv.srcdoc = previewHtml(r.html, {check: S.pendingCheck || [], noReveal: S.noReveal === true});
   }
   return r;
 }
@@ -3373,6 +3463,8 @@ function renderStats(r){
   add('pages', String(pageNames(S.project).length));
   const nSheets = Object.keys(S.project.sheets || {}).length;
   if(nSheets) add('stylesheets', String(nSheets));
+  const nScripts = Object.keys(S.project.scripts || {}).length;
+  if(nScripts) add('scripts', String(nScripts));
   add('image slots here', String(r.slots.length));
   add('images stored', String(Object.keys(S.assets).length));
   add('uploaded', String(uploaded));
@@ -3832,6 +3924,14 @@ addEventListener('message', (e)=>{
     const [prop, sign] = map[m.dir] || [];
     if(prop) doNudge('element', prop, sign, m.shift);
   }
+  else if(m.t === 'revealed'){
+    const n = m.n;
+    $('#revealTxt').textContent = n + ' hidden section' + (n===1?'':'s') + ' shown';
+    if(!S.saidReveal){
+      S.saidReveal = true;
+      log(n + ' section' + (n===1?' is':'s are') + ' invisible until you scroll to them on the live site, so they are being shown here to make them editable. The exported page is unaffected.');
+    }
+  }
   else if(m.t === 'scroll'){ S.scrollY = m.y; }
   else if(m.t === 'find'){ S.findN = m.n; S.findI = m.i; $('#findCnt').textContent = m.n ? (m.i + '/' + m.n) : ($('#findInput').value ? 'none' : ''); }
   else if(m.t === 'undo'){ undo(); }
@@ -4257,7 +4357,7 @@ function projectForSave(){
   }
   return {
     v:2, id:p.id, name:p.name, createdAt:p.createdAt, updatedAt:Date.now(),
-    pages, sheets:p.sheets, srcFiles:p.srcFiles,
+    pages, sheets:p.sheets, scripts:p.scripts, srcFiles:p.srcFiles,
     colors:p.colors, biz:p.biz, origin:p.origin, lang:p.lang,
     form:p.form, assets
   };
@@ -4328,15 +4428,15 @@ async function intake(fileList){
     catch(err){ fail('That .json is not readable', err); }
     return;
   }
-  const {html, css, imgs, other} = sortIncoming(list);
-  for(const f of other) log('Ignored ' + f.path + ' — the editor takes .html, .css, images and .json projects');
+  const {html, css, js, imgs, other} = sortIncoming(list);
+  for(const f of other) log('Ignored ' + f.path + ' — the editor takes .html, .css, .js, images and .json projects');
   if(!html.length && !S.project){
     fail('No .html file in that selection, so there is nothing to open yet.');
     return;
   }
   const pages = [];
   for(const f of html) pages.push({path:f.path, name:f.name, html:await f.file.text()});
-  const extras = {css, imgs};
+  const extras = {css, js, imgs};
   if(S.project) await addPagesFrom(pages, extras);
   else await openHtmlFiles(pages, null, extras);
 }
@@ -4459,6 +4559,14 @@ $('#findInput').onkeydown = (e)=>{
 $('#findNext').onclick = ()=> sendPv({t:'findStep', d:1});
 $('#findPrev').onclick = ()=> sendPv({t:'findStep', d:-1});
 
+$('#revealToggle').onchange = ()=>{
+  S.noReveal = !$('#revealToggle').checked;
+  S.saidReveal = false;
+  if(S.noReveal) $('#revealTxt').textContent = 'show hidden sections';
+  log(S.noReveal ? 'Showing the page as a visitor first sees it. Sections that animate in will be blank until you scroll.'
+                 : 'Showing sections that are hidden until scrolled to.');
+  rebuild(true);
+};
 $('#btnUndo').onclick = undo;
 function toggleLog(){
   const w = $('#logwrap');
@@ -4788,6 +4896,56 @@ function runTests(){
         if(Object.keys(CUR().nudges).length) throw new Error('reset left the neighbour rule behind');
         return 'rule sits on the neighbour, listed and cleared from the element you selected';
       } finally { S.project = saveP; S.page = saveN; S.sel = null; }
+    });
+    T('The page\u2019s own script runs in the preview and survives export', ()=>{
+      const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="styles.css"></head>' +
+                   '<body><section class="reveal"><h2>Hi</h2></section><script src="script.js"><\/script></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      addSheet(p, 'styles.css', '.reveal{opacity:0}');
+      addScript(p, 'script.js', 'document.querySelectorAll(".reveal");');
+      p.origin = 'https://example.com';
+
+      const prev = build(pageView(p, 'index.html'), S.assets, 'preview');
+      if(!/querySelectorAll\(".reveal"\)/.test(prev.html)) throw new Error('the script was not inlined for the preview');
+      if(/script src="script.js"/.test(prev.html)) throw new Error('the preview still points at a file it cannot fetch');
+      if(prev.problems.some(x=>x.kind==='js')) throw new Error('reported missing when it was supplied');
+
+      const folder = buildAll(p, S.assets, 'folder');
+      const fh = folder.pages[0].r.html;
+      if(!folder.files.has('script.js')) throw new Error('the script was not written out');
+      if(!/<script src="script.js">/.test(fh)) throw new Error('the tag was not restored');
+      if(/data-script/.test(fh)) throw new Error('bookkeeping attribute left in the output');
+
+      const sh = buildAll(p, S.assets, 'single').pages[0].r.html;
+      if(/script src=/.test(sh)) throw new Error('a single file still references an external script');
+      if(!/querySelectorAll\(".reveal"\)/.test(sh)) throw new Error('the script was not inlined into the single file');
+      return 'inlined for preview, written back for a folder, embedded in a single file';
+    });
+    T('A script that was not opened is reported, not silently dropped', ()=>{
+      const html = '<!DOCTYPE html><html><body><p>x</p><script src="missing.js"><\/script></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      p.srcFiles['images/x.jpg'] = 'deadbeef';        // makes it a folder-style site
+      const r = build(pageView(p, 'index.html'), S.assets, 'preview');
+      const said = r.problems.find(x=>x.kind==='js');
+      if(!said) throw new Error('not reported');
+      if(!/missing\.js/.test(said.msg)) throw new Error('does not name the file');
+      return 'named in the problems list';
+    });
+    T('Nothing that reveals hidden sections reaches the export', ()=>{
+      /* The override is applied by the preview agent, which is never part of a
+         build, so a page that animates on scroll still animates for visitors. */
+      const html = '<!DOCTYPE html><html><head><style>.reveal{opacity:0}</style></head>' +
+                   '<body><section class="reveal"><h2>Hi</h2></section></body></html>';
+      const p = PROJ([{name:'index.html', html}]);
+      p.origin = 'https://example.com';
+      for(const mode of ['single','folder']){
+        const out = buildAll(p, S.assets, mode).pages[0].r.html;
+        if(/data-vse-hidden/.test(out)) throw new Error(mode + ' carries the override attribute');
+        if(!/\.reveal\{opacity:0\}/.test(out)) throw new Error(mode + ' lost the page\u2019s own rule');
+      }
+      if(!/\[data-vse-hidden\]/.test(AGENT_CSS)) throw new Error('the preview rule is missing');
+      if(!/opacity:1!important/.test(AGENT_CSS)) throw new Error('the preview rule would not win');
+      return 'preview only, both export modes clean';
     });
     T('External CSS is read for colours and written back out on a folder export', ()=>{
       const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="css/site.css"></head>' +

@@ -1311,40 +1311,60 @@ function applyNudges(doc, project, problems){
        to Cloudflare Email Service. No third party, no database.
    ========================================================================== */
 const FORM_ENHANCE = [
-  "(function(){var f=document.querySelector('form[data-contact-form]');if(!f)return;",
-  "var s=f.querySelector('[data-form-status]');",
-  "if(!s){s=document.createElement('p');s.setAttribute('data-form-status','');",
-  "s.style.cssText='margin:.75em 0';f.appendChild(s);}",
+  // Every wired form, not just the first. A page with a short quote form in
+  // the hero and a full contact form at the bottom is ordinary, and handling
+  // only one of them leaves the other submitting the browser's own way: the
+  // visitor is navigated off the page to a screen of raw JSON, and if the
+  // template's form carried enctype="text/plain" — which a mailto form does —
+  // the endpoint cannot read the body at all and answers 400.
+  "(function(){var fs=document.querySelectorAll('form[data-contact-form]');if(!fs.length)return;",
+  "for(var i=0;i<fs.length;i++){var f=fs[i];",
+  "if(!f.querySelector('[data-form-status]')){var s=document.createElement('p');",
+  "s.setAttribute('data-form-status','');s.style.cssText='margin:.75em 0';f.appendChild(s);}}",
   // Listen on document during the capture phase, so this runs before any
   // handler the template attached to the form itself, then stop the event
   // reaching them. Templates commonly submit by setting window.location to a
   // mailto: link, which would open a mail app on top of the real send.
-  "document.addEventListener('submit',function(e){if(e.target!==f)return;",
+  "document.addEventListener('submit',function(e){",
+  "var f=e.target;if(!f||!f.hasAttribute||!f.hasAttribute('data-contact-form'))return;",
+  "var s=f.querySelector('[data-form-status]');",
   "e.preventDefault();e.stopPropagation();",
   "if(e.stopImmediatePropagation)e.stopImmediatePropagation();",
-  "var b=f.querySelector('[type=submit]');if(b){b.disabled=true;}s.textContent='Sending\\u2026';",
+  "var b=f.querySelector('[type=submit]');if(b){b.disabled=true;}if(s)s.textContent='Sending\\u2026';",
   "fetch(f.action,{method:'POST',body:new FormData(f)}).then(function(r){return r.json();}).then(function(d){",
-  "if(d&&d.ok){f.reset();s.textContent=f.getAttribute('data-success')||'Thank you.';}",
-  "else{s.textContent=(d&&d.error)||'That did not send. Please call us instead.';}",
-  "}).catch(function(){s.textContent='That did not send. Please call us instead.';})",
+  "if(d&&d.ok){f.reset();if(s)s.textContent=f.getAttribute('data-success')||'Thank you.';}",
+  "else{if(s)s.textContent=(d&&d.error)||'That did not send. Please call us instead.';}",
+  "}).catch(function(){if(s)s.textContent='That did not send. Please call us instead.';})",
   ".then(function(){if(b){b.disabled=false;}});},true);})();"
 ].join('');
 
-function applyForm(doc, form, problems){
-  /* Exports are routinely reopened and exported again, so everything this
-     function adds has to be removed first. Otherwise each round trip stacks
-     another status line and another copy of the script, and the visitor sees
-     the confirmation twice. */
-  for(const el of doc.querySelectorAll('script[data-form-script],[data-form-status]')) el.remove();
-  if(!form || !form.enabled) return false;
-  /* Most pages of a site have no form, and that is not a fault. Whether the
-     site as a whole has one is checked once, in buildAll. */
-  const f = doc.querySelector('form');
-  if(!f) return false;
+/* Which forms on a page are enquiry forms. Everything that takes typing, minus
+   the two things that plainly are not: a search box, which would start posting
+   search terms to the owner's inbox and stop searching, and anything the
+   designer has marked data-no-contact. */
+function isContactForm(f){
+  if(f.hasAttribute('data-no-contact')) return false;
+  if((f.getAttribute('role')||'').toLowerCase() === 'search') return false;
+  if(f.querySelector('input[type="search"]')) return false;
+  return [...f.querySelectorAll('input,textarea,select')]
+    .some(x => !/^(submit|button|reset|image|hidden)$/i.test(x.getAttribute('type')||''));
+}
+
+/* Point one form at the endpoint and make its fields survive the trip. */
+function wireForm(doc, f, form, problems){
   f.setAttribute('data-contact-form','');
   f.setAttribute('action', '/api/contact');
   f.setAttribute('method', 'post');
   f.setAttribute('data-success', form.success || 'Thank you.');
+  /* A template's form is often a mailto form, and those carry
+     enctype="text/plain". Left in place, a submit that for any reason does not
+     go through the script above posts a plain-text body, which is not a form
+     encoding at all: the endpoint throws reading it and answers "That form
+     could not be read." Removing it means even an unscripted submit arrives in
+     a shape the endpoint understands. target would open the reply in a new
+     tab, which is just as unhelpful. */
+  f.removeAttribute('enctype');
+  f.removeAttribute('target');
   const fields = [...f.querySelectorAll('input,textarea,select')]
     .filter(x=>!/^(submit|button|hidden)$/i.test(x.getAttribute('type')||''));
   const unnamed = fields.filter(x=>!x.getAttribute('name'));
@@ -1362,24 +1382,47 @@ function applyForm(doc, form, problems){
     hp.setAttribute('style','position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden');
     f.appendChild(hp);
   }
-  if(form.turnstile && form.siteKey){
-    if(!f.querySelector('.cf-turnstile')){
-      const d = doc.createElement('div');
-      d.setAttribute('class','cf-turnstile');
-      d.setAttribute('data-sitekey', form.siteKey);
-      f.appendChild(d);
-    }
-    if(!doc.querySelector('script[src*="challenges.cloudflare.com"]')){
-      const sc = doc.createElement('script');
-      sc.setAttribute('src','https://challenges.cloudflare.com/turnstile/v0/api.js');
-      sc.setAttribute('async',''); sc.setAttribute('defer','');
-      doc.head.appendChild(sc);
-    }
+  if(form.turnstile && form.siteKey && !f.querySelector('.cf-turnstile')){
+    const d = doc.createElement('div');
+    d.setAttribute('class','cf-turnstile');
+    d.setAttribute('data-sitekey', form.siteKey);
+    f.appendChild(d);
   }
+}
+
+function applyForm(doc, form, problems){
+  /* Exports are routinely reopened and exported again, so everything this
+     function adds has to be removed first. Otherwise each round trip stacks
+     another status line and another copy of the script, and the visitor sees
+     the confirmation twice. */
+  for(const el of doc.querySelectorAll('script[data-form-script],[data-form-status]')) el.remove();
+  if(!form || !form.enabled) return false;
+  /* Most pages of a site have no form, and that is not a fault. Whether the
+     site as a whole has one is checked once, in buildAll. */
+  const all = [...doc.querySelectorAll('form')];
+  const forms = all.filter(isContactForm);
+  /* Clear the marker everywhere first: a form that was wired in an earlier
+     export and has since been excluded must not keep pointing at the endpoint
+     while nothing handles it. */
+  for(const el of all) el.removeAttribute('data-contact-form');
+  if(!forms.length) return false;
+  for(const f of forms) wireForm(doc, f, form, problems);
+  if(forms.length < all.length){
+    const skipped = all.length - forms.length;
+    problems.push({kind:'form', ref:'forms',
+      msg: skipped + ' form' + (skipped===1?' was':'s were') + ' left alone on this page (a search box, or marked data-no-contact).'});
+  }
+  /* One script for all of them: it finds every wired form on the page. */
   const enh = doc.createElement('script');
   enh.setAttribute('data-form-script','');
   enh.textContent = FORM_ENHANCE;
   doc.body.appendChild(enh);
+  if(form.turnstile && form.siteKey && !doc.querySelector('script[src*="challenges.cloudflare.com"]')){
+    const sc = doc.createElement('script');
+    sc.setAttribute('src','https://challenges.cloudflare.com/turnstile/v0/api.js');
+    sc.setAttribute('async',''); sc.setAttribute('defer','');
+    doc.head.appendChild(sc);
+  }
   return true;
 }
 
@@ -3324,13 +3367,31 @@ function openHtml(html, name){ openHtmlFiles([{name:(name||'index')+'.html', htm
    configured before the site goes live. */
 function reportForms(){
   if(!S.allBuilt) return;
-  const withForm = S.allBuilt.pages.filter(p => p.r.doc.querySelector('form')).map(p => p.name);
-  if(!withForm.length){
+  /* Count the forms, not just the pages that have one. A page with a quote
+     form in the hero and a contact form at the bottom reads as "1 page" either
+     way, and when only the first was ever wired there was nothing on screen to
+     say so — the second looked fine right up until a visitor used it. */
+  const withForm = [];
+  let total = 0, skipped = 0;
+  for(const p of S.allBuilt.pages){
+    const all = [...p.r.doc.querySelectorAll('form')];
+    if(!all.length) continue;
+    const wired = all.filter(isContactForm);
+    total += wired.length;
+    skipped += all.length - wired.length;
+    withForm.push(p.name + (wired.length > 1 ? ' (' + wired.length + ' forms)' : ''));
+  }
+  if(!total){
     log('No <form> found on any page. The Form tab can still be switched on for later.');
     return;
   }
-  log('Form found on ' + withForm.length + ' page' + (withForm.length===1?'':'s') + ': ' + withForm.join(', ') +
+  log(total + ' enquiry form' + (total===1?'':'s') + ' across ' + withForm.length + ' page' +
+      (withForm.length===1?'':'s') + ': ' + withForm.join(', ') +
       '. One setup covers all of them — configure it once in the Form tab.', 'ok');
+  if(skipped){
+    log(skipped + ' other form' + (skipped===1?'':'s') + ' left alone (a search box, or marked data-no-contact). ' +
+        'Add data-no-contact to any form that should not send enquiries.');
+  }
 }
 
 async function addPagesFrom(files, extras){
@@ -5415,6 +5476,102 @@ function runTests(){
         }
       }
       return '2 forms, 1 endpoint, both layouts clean';
+    });
+    T('Every enquiry form on a page is wired, not just the first', ()=>{
+      /* A short quote form in the hero and a full contact form at the bottom
+         is an ordinary shape, and only the first used to be handled. The
+         second then submitted the browser's own way: the visitor was navigated
+         off the page onto raw JSON. */
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form class="quick"><input name="name"><button type="submit">Quote</button></form>' +
+        '<form class="full" action="mailto:a@b.c" method="post" enctype="text/plain">' +
+        '<input name="name"><textarea name="message"></textarea>' +
+        '<button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true;
+      const r = build(p, S.assets, 'folder');
+      const forms = (r.html.match(/<form[^>]*>/g) || []);
+      const wired = forms.filter(f => /data-contact-form/.test(f));
+      if(wired.length !== 2) throw new Error(wired.length + ' of ' + forms.length + ' forms wired: ' + forms.join(' '));
+      if((r.html.match(/action="\/api\/contact"/g) || []).length !== 2) throw new Error('both forms must post to the endpoint');
+      if((r.html.match(/name="company_website"/g) || []).length !== 2) throw new Error('each form needs its own honeypot');
+      if((r.html.match(/data-form-script/g) || []).length !== 1) throw new Error('one script should cover both');
+      return 'both forms wired by one script';
+    });
+    T('A template mailto form loses the enctype that makes the endpoint 400', ()=>{
+      /* enctype="text/plain" is what a mailto form ships with, and it is not a
+         form encoding the endpoint can read: request.formData() throws on it
+         and the visitor gets "That form could not be read." Leaving it on a
+         wired form means any submit that misses the script fails that way. */
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form action="mailto:a@b.c" method="post" enctype="text/plain" target="_blank">' +
+        '<input name="name"><button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true;
+      const r = build(p, S.assets, 'folder');
+      const tag = (r.html.match(/<form[^>]*>/) || [''])[0];
+      if(/enctype/i.test(tag)) throw new Error('enctype survived: ' + tag);
+      if(/target=/i.test(tag)) throw new Error('target survived: ' + tag);
+      if(/mailto:/.test(tag)) throw new Error('still points at mailto: ' + tag);
+      return 'enctype and target stripped, action repointed';
+    });
+    T('A search box is left alone rather than turned into an enquiry form', ()=>{
+      /* Repointing it would post search terms to the owner's inbox and stop
+         the site searching, which is a worse failure than not helping. */
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form role="search" action="/search"><input type="search" name="q">' +
+        '<button type="submit">Find</button></form>' +
+        '<form class="real"><input name="name"><button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true;
+      const r = build(p, S.assets, 'folder');
+      const forms = (r.html.match(/<form[^>]*>/g) || []);
+      const search = forms.find(f => /role="search"/.test(f)) || '';
+      if(/data-contact-form/.test(search)) throw new Error('the search form was hijacked: ' + search);
+      if(!/action="\/search"/.test(search)) throw new Error('the search action was changed: ' + search);
+      if(!forms.some(f => /class="real"/.test(f) && /data-contact-form/.test(f))) throw new Error('the real form was not wired');
+      return 'search left alone, enquiry form wired';
+    });
+    T('data-no-contact keeps a form out, and takes effect on a re-export', ()=>{
+      const p = P();
+      p.originalHtml = p.originalHtml.replace('<footer>',
+        '<form class="news" data-no-contact><input name="email"><button type="submit">Join</button></form>' +
+        '<form class="real"><input name="name"><button type="submit">Send</button></form><footer>');
+      indexSource(p);
+      p.form.enabled = true;
+      const r = build(p, S.assets, 'folder');
+      const news = (r.html.match(/<form class="news"[^>]*>/) || [''])[0];
+      if(/data-contact-form/.test(news)) throw new Error('opted-out form was wired: ' + news);
+      if(/api\/contact/.test(news)) throw new Error('opted-out form was repointed: ' + news);
+      if(!r.problems.some(x => x.kind === 'form' && /left alone/.test(x.msg))) throw new Error('not reported');
+      return 'left out and reported';
+    });
+    T('Two forms stay two forms across three export/reopen cycles', ()=>{
+      let html = '<!DOCTYPE html><html><head><title>T</title></head><body>' +
+                 '<form class="a"><input name="name"><button type="submit">A</button></form>' +
+                 '<form class="b"><input name="name"><button type="submit">B</button></form></body></html>';
+      for(let i = 0; i < 3; i++){
+        const p = PROJ([{name:'index.html', html}]);
+        adoptFromMarkup(p);
+        p.origin = 'https://example.com';
+        p.pages['index.html'].head.description = 'A description';
+        Object.assign(p.form, {enabled:true, to:'o@x.com', from:'f@x.com', target:'pages'});
+        html = buildAll(p, S.assets, 'folder').pages[0].r.html;
+      }
+      /* Count elements, not text. The injected script's own source names both
+         data-contact-form and data-form-status, so a string match finds those
+         too and reports twice as many forms as the page has. */
+      const d = new DOMParser().parseFromString(html, 'text/html');
+      const count = (sel)=> d.querySelectorAll(sel).length;
+      if(count('script[data-form-script]') !== 1) throw new Error(count('script[data-form-script]') + ' form scripts');
+      if(count('input[name="company_website"]') !== 2) throw new Error(count('input[name="company_website"]') + ' honeypots, expected 2');
+      if(count('[data-form-status]') !== 0) throw new Error('a status line was baked into the export');
+      if(count('form[data-contact-form]') !== 2) throw new Error(count('form[data-contact-form]') + ' wired forms');
+      if(count('form') !== 2) throw new Error(count('form') + ' forms, expected 2');
+      return 'stable at two forms, one script';
     });
     T('A form field with no name is given one and reported', ()=>{
       const p = P();
